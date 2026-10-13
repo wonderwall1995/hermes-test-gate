@@ -1,0 +1,29 @@
+{
+  "name": "hermes-test-gate",
+  "version": "1.0.0",
+  "description": "Hermes 웹훅으로 받은 PR의 QA 테스트 기록을 Claude Code가 평가하는 하위 프로젝트 (가제: testgate)",
+  "private": true,
+  "packageManager": "pnpm@9.15.9",
+  "scripts": {
+    "mock:qa": "scripts/mock_post.sh qa",
+    "mock:qa-commit": "scripts/mock_post.sh qa-commit",
+    "mock:qa-multiline": "scripts/mock_post.sh qa-multiline",
+    "mock:qa-design": "scripts/mock_post.sh qa-design",
+    "mock:qa-empty": "scripts/mock_post.sh qa-empty",
+    "mock:plain": "scripts/mock_post.sh plain",
+    "mock:other-author": "scripts/mock_post.sh other-author",
+    "mock:edited": "scripts/mock_post.sh edited",
+    "mock:issue": "scripts/mock_post.sh issue",
+    "mock:bad-signature": "scripts/mock_post.sh bad-signature",
+    "mock:safe": "pnpm mock:plain && pnpm mock:other-author && pnpm mock:edited && pnpm mock:issue && pnpm mock:bad-signature",
+    "mock:dry": "for c in qa qa-commit qa-multiline qa-design qa-empty plain other-author edited issue; do MOCK_DRY_RUN=1 scripts/mock_post.sh $c; done",
+    "filter:install": "scripts/install.sh",
+    "filter:check": "scripts/install.sh --check",
+    "filter:test": "python3 scripts/test_qa_filter.py",
+    "gateway:status": "curl -fsS http://127.0.0.1:8644/health && echo",
+    "gateway:restart:systemd": "systemctl --user restart hermes-gateway && systemctl --user is-active hermes-gateway",
+    "gateway:restart:docker": "docker restart hermes",
+    "gateway:logs": "tail -f \"${HERMES_HOME:-$HOME/.hermes}/logs/gateway.log\" | grep --line-buffered -i webhook"
+  },
+  "license": "ISC"
+}
