@@ -22,7 +22,9 @@ import os
 import pathlib
 import re
 import sys
+import time
 
+DELIVERY_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 COMMAND_PREFIX = "/qa"
 MAX_TEXT_CHARS = 10000
 # 명령어 바로 뒤에 오는 선택적 커밋ID. 대괄호가 필수이다.
@@ -128,6 +130,41 @@ def parse_qa(body):
     return {"commit": commit, "text": rest[:MAX_TEXT_CHARS], "truncated": truncated}
 
 
+def spool_dir():
+    """분석 요청을 저장하는 폴더. 설정 파일이 있는 폴더 아래의 testgate/requests 이다."""
+    return config_path().parent / "testgate" / "requests"
+
+
+def write_request(payload, parsed):
+    """통과한 요청을 파일로 저장한다. 에이전트 프롬프트에는 본문을 넣지 않고 이 파일로 전달한다.
+
+    같은 delivery ID의 파일이 이미 있으면 덮어쓰지 않는다.
+    """
+    delivery_id = payload.get("deliveryId")
+    if not isinstance(delivery_id, str) or not DELIVERY_ID_PATTERN.match(delivery_id):
+        raise ConfigError("deliveryId 형식이 올바르지 않다")
+    event = payload["event"]
+    request = {
+        "deliveryId": delivery_id,
+        "repo": event["repo"].get("fullName"),
+        "pr": event.get("number"),
+        "commit": parsed["commit"],
+        "text": parsed["text"],
+        "truncated": parsed["truncated"],
+        "receivedAt": int(time.time()),
+    }
+    directory = spool_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / f"{delivery_id}.json"
+    if target.exists():
+        return
+    temp = directory / f".{delivery_id}.tmp"
+    fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        json.dump(request, handle, ensure_ascii=False)
+    os.replace(temp, target)
+
+
 def main():
     try:
         config = load_config()
@@ -141,6 +178,18 @@ def main():
         return
     result = decide(payload, config)
     if result is not None:
+        if not os.environ.get("TESTGATE_NO_SPOOL"):
+            try:
+                write_request(payload, result["qa"])
+            except (ConfigError, OSError, KeyError, TypeError) as exc:
+                sys.stderr.write(f"요청을 저장할 수 없다: {exc}")
+                sys.exit(1)
+            # 서술 본문은 파일로만 전달한다. Hermes가 쓰는 출력에는 길이만 남긴다.
+            result = dict(result, qa={
+                "commit": result["qa"]["commit"],
+                "truncated": result["qa"]["truncated"],
+                "text_chars": len(result["qa"]["text"]),
+            })
         sys.stdout.write(json.dumps(result, ensure_ascii=False))
 
 

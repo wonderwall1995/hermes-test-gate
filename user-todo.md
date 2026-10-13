@@ -12,9 +12,13 @@
 
 ## 할 일
 
-(없음)
+[ ] 이유: GitHub에서 Hermes까지 이어지는 전체 경로와 Bot 코멘트 게시는 실제 PR 코멘트로만 확인할 수 있고, 되돌리기 어려운 외부 게시라 사용자가 직접 시작해야 합니다.
+    할일: github-app 레포의 PR #3(또는 원하는 테스트 PR) 대화창에 /qa 로 시작하는 코멘트(예: /qa 나는 로그를 확인했고 다른 테스트는 하지 않았다)를 쓰고, 약 30초 뒤 PR 에 Bot 코멘트가 달리는지 알려주세요.
 
 ## 나중에 할 일
+
+[ ] 이유: 도메인 지식 문서(diagnosis.json 등)를 분석에 연결하려면 문서의 실제 형식과 위치를 알아야 합니다.
+    할일: 급하지 않음. 그런 문서가 있다는 것만 알려 둔 상태이며, 연결을 시작할 때 diagnosis.json 예시 한 개와 위치를 알려주세요.
 
 [ ] 이유: 판정 기준이 없으면 합격과 불합격을 나눌 수 없습니다.
     할일: 테스트 커버리지 충족을 어떻게 판단할지(예: 변경된 파일마다 체크리스트 항목 1개 이상) 정해서 알려주세요.
@@ -56,3 +60,15 @@
 
 [x] 이유: github-app을 거친 실제 경로(GitHub 코멘트에서 Hermes까지)는 사용자의 PR이 있어야 확인할 수 있습니다.
     할일: docs/mock-test.md 의 2단계대로 테스트용 PR에 일반 코멘트 test 와 /qa test 를 차례로 쓰고 결과를 알려주세요. (결과: 성공. PR #3 코멘트 test는 무시, /qa test는 세션 생성, 사용자 실행 2026-10-13 11:56~11:58)
+
+[x] 이유: 분석에 쓸 Claude 모델에 따라 호출당 비용과 품질이 달라지고 기본값은 가장 비싼 Opus입니다 (시험은 sonnet, 호출당 목록가 약 $0.02).
+    할일: 분석에 쓸 모델(예: sonnet, opus)을 정해 알려주세요. 정하면 testgate.json 의 analysis.claude_model 에 적습니다. (결과: sonnet 5.5, 추론 강도 medium. testgate.json 의 analysis 에 적용함)
+
+[x] 이유: Hermes가 github-app의 PR 조회와 코멘트 API를 호출하려면 두 쪽의 서명 키가 같아야 하고, github-app의 .env 는 비밀 파일이라 LLM이 수정하지 않기로 했습니다.
+    할일: github-app 의 .env 에 HERMES_API_SECRET=(서명 키) 한 줄을 추가하세요. (결과: 사용자가 추가함)
+
+[x] 이유: Hermes가 github-app의 API를 부를 때 쓰는 서명 키는 프로젝트가 아니라 Hermes의 자격 증명 저장소(.env)에 있어야 하고, 그 파일은 비밀 파일이라 LLM이 수정하지 않기로 했습니다.
+    할일: ~/.hermes/.env 에 TESTGATE_GITHUB_APP_SECRET=(github-app 의 .env 에 넣은 HERMES_API_SECRET 과 같은 값) 한 줄을 추가하고 알려주세요. 그러면 제가 게이트웨이를 재시작합니다. (결과: 사용자가 추가함, 래퍼가 값을 받는 것을 확인)
+
+[x] 이유: 새 API 코드는 빌드가 끝났지만 실행 중인 github-app 서비스는 아직 옛 코드이고 재시작에는 sudo 비밀번호가 필요합니다.
+    할일: .env 를 고친 뒤 github-app 폴더에서 pnpm svc:restart 를 실행하고 active 가 나오면 알려주세요. (결과: 13:07 재시작 확인, API 열림)

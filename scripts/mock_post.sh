@@ -6,6 +6,7 @@
 # HERMES_HOME 기본값은 ~/.hermes 이다 (Docker 이미지는 /opt/data).
 # 서명 키는 $HERMES_HOME/webhook_subscriptions.json 의 라우트 설정에서 읽는다. 키를 화면에 출력하지 않는다.
 # 작성자와 레포 소유자는 $HERMES_HOME/testgate.json 의 첫 번째 허용 계정을 쓴다 (MOCK_AUTHOR, MOCK_OWNER 로 바꿀 수 있다).
+# 가짜 PR 번호와 레포 이름은 MOCK_PR(기본 1), MOCK_REPO(기본 hermes-test-gate) 로 바꾼다. 실제 PR 을 가리키면 분석이 실제로 실행되고 코멘트가 게시될 수 있다.
 set -euo pipefail
 
 CASE="${1:-}"
@@ -40,19 +41,19 @@ case "$CASE" in
 esac
 
 DELIVERY="mock-$(date +%s)-$RANDOM"
-BODY="$(DELIVERY="$DELIVERY" OWNER="$OWNER" ACTION="$ACTION" TARGET="$TARGET" AUTHOR="$AUTHOR" BODY_TEXT="$BODY_TEXT" python3 -c '
+BODY="$(DELIVERY="$DELIVERY" OWNER="$OWNER" PR="${MOCK_PR:-1}" REPO="${MOCK_REPO:-hermes-test-gate}" ACTION="$ACTION" TARGET="$TARGET" AUTHOR="$AUTHOR" BODY_TEXT="$BODY_TEXT" python3 -c '
 import json, os
 e = os.environ
 print(json.dumps({"deliveryId": e["DELIVERY"], "event": {
-    "kind": "comment", "action": e["ACTION"], "target": e["TARGET"], "number": 1, "commentId": 1,
+    "kind": "comment", "action": e["ACTION"], "target": e["TARGET"], "number": int(e["PR"]), "commentId": 1,
     "url": "https://example.invalid/mock",
-    "repo": {"owner": e["OWNER"], "name": "hermes-test-gate", "fullName": e["OWNER"] + "/hermes-test-gate"},
+    "repo": {"owner": e["OWNER"], "name": e["REPO"], "fullName": e["OWNER"] + "/" + e["REPO"]},
     "author": {"login": e["AUTHOR"], "type": "User"}, "body": e["BODY_TEXT"]}}, ensure_ascii=False))
 ')"
 
 if [ "${MOCK_DRY_RUN:-}" = "1" ]; then
   echo "케이스: $CASE (DRY RUN, 요청을 보내지 않음)"
-  RESULT="$(printf '%s' "$BODY" | python3 "$(dirname "$0")/qa_filter.py")"
+  RESULT="$(printf '%s' "$BODY" | TESTGATE_NO_SPOOL=1 python3 "$(dirname "$0")/qa_filter.py")"
   if [ -z "$RESULT" ]; then echo "필터 결과: 버림"; else printf '필터 결과: %s\n' "$RESULT"; fi
   exit 0
 fi
