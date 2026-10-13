@@ -16,12 +16,13 @@ import sys
 import time
 
 from testgate import analyze as analyze_mod
-from testgate import config, diffsource, githubapp, knowledge, prompt, report, runner
+from testgate import config, diffsource, githubapp, knowledge, ledger, prompt, report, runner
 
 DELIVERY_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 REPO_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{7,40}$")
 FAILURE_COMMENT = "분석에 실패했습니다. 잠시 뒤 같은 요청을 다시 코멘트로 남겨 주세요."
+EMPTY_FREE_ANSWER = "질문 내용이 없습니다. `/qa free: 질문`처럼 콜론 뒤에 내용을 적어 주세요."
 
 
 class RunError(Exception):
@@ -52,13 +53,16 @@ def load_request(home, delivery_id, allowed_owners):
         raise RunError("요청의 commit이 올바르지 않다")
     if not isinstance(text, str):
         raise RunError("요청의 text가 올바르지 않다")
-    return {"deliveryId": delivery_id, "repo": repo, "pr": pr, "commit": commit, "text": text}
+    free = data.get("free", False)
+    if not isinstance(free, bool):
+        raise RunError("요청의 free가 올바르지 않다")
+    return {"deliveryId": delivery_id, "repo": repo, "pr": pr, "commit": commit, "text": text, "free": free}
 
 
 def cleanup(home, retention_days, now=time.time):
     """보관 기간이 지난 요청과 보고서 파일을 지운다."""
     cutoff = now() - retention_days * 86400
-    for sub in ("requests", "reports"):
+    for sub in ("requests", "reports", "threads"):
         folder = data_dir(home) / sub
         if not folder.is_dir():
             continue
@@ -123,14 +127,35 @@ def execute(delivery_id, home, settings, allowed_owners, claude, app, env=None, 
         summary["error"] = str(exc)
         return summary
 
-    name = report.session_name(request["pr"], request["commit"])
+    repo, pr, commit = request["repo"], request["pr"], request["commit"]
+    # 같은 PR의 요청 순번. 기록을 쓸 수 없어도 분석은 계속한다.
+    try:
+        seq = ledger.reserve(home, repo, pr, delivery_id)
+    except OSError:
+        seq = None
+    name = report.session_name(pr, None, commit, seq)
     summary["session"] = name
     reports = data_dir(home) / "reports"
+    context = None
     try:
-        context = app.fetch_context(request["repo"], request["pr"], request["commit"])
+        context = app.fetch_context(repo, pr, commit)
         context = diffsource.apply_limit(context, settings["max_diff_chars"])
+        name = report.session_name(pr, context["title"], commit, seq)
+        summary["session"] = name
+        try:
+            history = [e for e in ledger.done_entries(home, repo, pr) if e.get("deliveryId") != delivery_id]
+        except OSError:
+            history = []
         kb = knowledge.DirectoryKnowledge(settings["knowledge_dirs"]) if settings["knowledge_dirs"] else knowledge.NullKnowledge()
-        outcome = analyze_mod.analyze(request, context, kb, claude)
+        if request["free"] and not request["text"].strip():
+            # 질문이 비어 있으면 Claude를 부르지 않고 안내만 한다.
+            outcome = {"markdown": report.render_free(EMPTY_FREE_ANSWER, name), "verdict": "-", "mode": "free",
+                       "notes": [], "result": {"answer": EMPTY_FREE_ANSWER}, "meta": {}, "files_record": {},
+                       "summary": "", "answer": EMPTY_FREE_ANSWER, "session_name": name}
+        elif request["free"]:
+            outcome = analyze_mod.analyze_free(request, context, kb, claude, history=history, name=name)
+        else:
+            outcome = analyze_mod.analyze(request, context, kb, claude, history=history, name=name)
     except (diffsource.DiffSourceError, prompt.PromptError, runner.RunnerError, analyze_mod.AnalysisError) as exc:
         summary["error"] = str(exc)[:200]
         outcome = None
@@ -138,25 +163,42 @@ def execute(delivery_id, home, settings, allowed_owners, claude, app, env=None, 
     if outcome is None:
         markdown = f"{FAILURE_COMMENT}\n\n---\n세션: `{name}`\n"
         comment_id = f"{delivery_id}-failed"
+        _record(home, repo, pr, delivery_id, {"status": "failed", "session": name, "error": summary.get("error", "")},
+                context and context.get("title"))
     else:
         markdown = outcome["markdown"]
         comment_id = delivery_id
         summary.update(result="ok", verdict=outcome["verdict"], mode=outcome["mode"])
         write_private(reports / f"{delivery_id}.md", markdown)
         write_private(reports / f"{delivery_id}.json", json.dumps(
-            {"request": {k: request[k] for k in ("deliveryId", "repo", "pr", "commit")}, "result": outcome["result"],
-             "notes": outcome["notes"], "meta": outcome["meta"]}, ensure_ascii=False, indent=2))
+            {"request": {k: request[k] for k in ("deliveryId", "repo", "pr", "commit", "free")}, "session": name,
+             "result": outcome["result"], "notes": outcome["notes"], "meta": outcome["meta"]}, ensure_ascii=False, indent=2))
         # 경로를 출력하면 Hermes가 파일 첨부로 오해해 전송하려 한다. 저장 여부만 알린다.
         summary["report"] = "saved"
+        record = {"status": "done", "kind": outcome["mode"], "session": name, "commit": commit,
+                  "scope": context["scope"], "head_sha": context["head_sha"], "title": context["title"],
+                  "summary": outcome["summary"][:600], "files": outcome["files_record"]}
+        if outcome["mode"] == "free":
+            record["question"] = request["text"][:500]
+            record["answer"] = outcome["answer"][:1500]
+        _record(home, repo, pr, delivery_id, record, context["title"])
 
     if settings["post_comments"]:
         try:
-            summary["comment"] = app.post_comment(request["repo"], request["pr"], markdown, comment_id)
+            summary["comment"] = app.post_comment(repo, pr, markdown, comment_id)
         except diffsource.DiffSourceError as exc:
             summary["comment"] = "failed"
             summary.setdefault("error", str(exc)[:200])
     summary["rename"] = rename_session(home, settings["route_name"], delivery_id, name, settings["hermes_binary"], env, hermes_run)
     return summary
+
+
+def _record(home, repo, pr, delivery_id, record, title):
+    """PR 대화 기록에 결과를 남긴다. 실패해도 분석 결과에는 영향이 없다."""
+    try:
+        ledger.finalize(home, repo, pr, delivery_id, record, title=title)
+    except OSError:
+        pass
 
 
 def format_summary(summary):

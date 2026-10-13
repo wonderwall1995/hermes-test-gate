@@ -45,6 +45,16 @@ OUTPUT_SCHEMA = {
 }
 
 
+FREE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["answer"],
+    "properties": {"answer": {"type": "string"}},
+}
+
+MAX_FREE_CHARS = 6000
+
+
 class OutputError(Exception):
     """출력 형태가 스키마와 맞지 않을 때 발생한다."""
 
@@ -53,6 +63,13 @@ def _text(value, field):
     if not isinstance(value, str):
         raise OutputError(f"{field}는 문자열이어야 한다")
     return value[:MAX_FIELD_CHARS]
+
+
+def validate_free(raw):
+    """자유 대화 출력 검증. 길이를 제한한 답변 문자열을 돌려준다."""
+    if not isinstance(raw, dict) or not isinstance(raw.get("answer"), str):
+        raise OutputError("answer가 문자열이 아니다")
+    return raw["answer"][:MAX_FREE_CHARS]
 
 
 def normalize_space(text):

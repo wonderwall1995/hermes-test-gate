@@ -103,8 +103,8 @@ class AnalyzeTest(FakeClaudeCase):
     def test_end_to_end(self):
         outcome = analyze.analyze(REQUEST, CONTEXT, knowledge.NullKnowledge(), self.runner())
         self.assertEqual(outcome["verdict"], "sufficient")
-        self.assertEqual(outcome["session_name"], "[PR7]")
-        self.assertTrue(outcome["markdown"].rstrip().endswith("세션: `[PR7]`"))
+        self.assertEqual(outcome["session_name"], "[PR7 - t]")
+        self.assertTrue(outcome["markdown"].rstrip().endswith("세션: `[PR7 - t]`"))
 
     def test_bad_output_shape_is_an_error(self):
         os.environ["FAKE_OUTPUT"] = json.dumps({"mode": "evaluate"})
@@ -119,7 +119,7 @@ class AnalyzeTest(FakeClaudeCase):
         self.assertEqual(outcome["verdict"], "more_tests_needed")
 
     def test_oversized_prompt_is_refused(self):
-        big = dict(CONTEXT, diff="x" * (analyze.MAX_PROMPT_CHARS + 1))
+        big = dict(CONTEXT, diff="diff --git a/a.py b/a.py\n" + "+x\n" * analyze.MAX_PROMPT_CHARS)
         with self.assertRaises(analyze.AnalysisError):
             analyze.analyze(REQUEST, big, knowledge.NullKnowledge(), self.runner())
         self.assertFalse(self.record.exists())

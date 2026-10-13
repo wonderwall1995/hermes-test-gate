@@ -188,16 +188,16 @@ class ExecuteTest(Base):
     def test_success_end_to_end(self):
         self.spool()
         summary, renames = self.execute()
-        self.assertEqual((summary["result"], summary["verdict"], summary["session"]), ("ok", "sufficient", "[PR3]"))
+        self.assertEqual((summary["result"], summary["verdict"], summary["session"]), ("ok", "sufficient", "[PR3 - T #1]"))
         self.assertTrue(summary["comment"].endswith("issuecomment-9"))
         self.assertEqual(summary["rename"], "renamed")
         # 보고서 경로를 출력에 넣으면 Hermes가 파일 첨부로 오해한다
         self.assertEqual(summary["report"], "saved")
         self.assertNotIn("/", run.format_summary(dict(summary, comment="skipped")))
-        self.assertEqual(renames[0][1:], ["sessions", "rename", "sess_1", "[PR3]"])
+        self.assertEqual(renames[0][1:], ["sessions", "rename", "sess_1", "[PR3 - T #1]"])
         posted = [p for path, p in FakeApp.log if path == "/api/comment"][0]
         self.assertEqual(posted["deliveryId"], "d-1")
-        self.assertTrue(posted["body"].rstrip().endswith("세션: `[PR3]`"))
+        self.assertTrue(posted["body"].rstrip().endswith("세션: `[PR3 - T #1]`"))
         report = self.home / "testgate" / "reports" / "d-1.md"
         self.assertEqual(stat.S_IMODE(report.stat().st_mode), 0o600)
         self.assertEqual(report.read_text(encoding="utf-8"), posted["body"])
@@ -206,7 +206,7 @@ class ExecuteTest(Base):
     def test_commit_in_session_name(self):
         self.spool(commit="abc1421511")
         summary, _ = self.execute()
-        self.assertEqual(summary["session"], "[PR3-abc1421511]")
+        self.assertEqual(summary["session"], "[PR3 - T - abc1421511 #1]")
 
     def test_claude_failure_posts_generic_failure_comment_with_other_id(self):
         self.spool()
