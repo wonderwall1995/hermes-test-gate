@@ -1,7 +1,18 @@
-# 분석기 설계 (Stage 1)
+# 분석기 설계
 
 QA 서술과 PR 정보를 받아, 변경된 파일마다 테스트 언급이 있는지 Claude Code가 판단하고, 결과를 마크다운 보고서로 만듭니다.
-이 단계는 GitHub 없이 로컬 git 저장소로 동작합니다. GitHub 연동은 Stage 2입니다.
+PR 정보와 diff는 github-app의 `/api/pr`에서 가져오고(개발과 시험에는 로컬 git도 가능), 결과는 github-app의 `/api/comment`로 PR에 코멘트합니다.
+
+## 전체 흐름
+
+```
+Hermes 웹훅 수신 -> 라우트 필터(scripts/qa_filter.py): 허용 계정의 /qa 코멘트만 통과
+                    요청을 requests/<deliveryId>.json 으로 저장, 래퍼를 백그라운드로 시작
+Hermes 세션      -> 요청의 기록으로만 남음 (LLM은 OK만 답함, 도구 없음)
+래퍼(testgate run <deliveryId>, 별도 프로세스)
+                 -> 요청 재검증 -> github-app /api/pr 로 PR 맥락 조회 -> (이어받기 판단) -> Claude 분석
+                 -> 보고서 저장 -> github-app /api/comment 로 게시 -> 상태 DB에서 세션을 찾아 이름 변경
+```
 
 ## 원칙
 
@@ -45,7 +56,8 @@ Hermes 웹훅은 요청마다 새 세션을 만듭니다 (코드에 고정된 �
 
 ```
 testgate/
-  diffsource.py   PR 정보와 diff를 공급 (LocalGitSource: 로컬 git. 이후 GithubAppSource)
+  diffsource.py   diff 블록 나누기와 크기 제한, 로컬 git 소스(개발과 시험용)
+  githubapp.py    github-app API 클라이언트 (PR 맥락 조회, 코멘트 게시, 서명)
   knowledge.py    도메인 지식 문서를 공급 (DirectoryKnowledge. 이후 다른 소스)
   prompt.py       시스템 프롬프트와 데이터 봉투(난수 구분자) 생성
   schema.py       출력 스키마, 검증, 후처리 (누락 파일 보충, 인용 확인, 모드 강제)
@@ -53,18 +65,20 @@ testgate/
   report.py       마크다운 보고서 생성 (이스케이프, 맨 아래 세션 이름)
   ledger.py       PR 대화 기록, 순번, diff 지문, 이어받기 판단
   analyze.py      위 조각을 엮는 함수 (평가와 설계서, 자유 대화)
-  __main__.py     CLI: python3 -m testgate analyze ...
+  run.py          래퍼: 요청 읽기, 순번 예약, 분석, 보고서와 기록 저장, 코멘트 게시, 세션 이름 변경
+  config.py       testgate.json 읽기 (비밀은 읽지 않음)
+  __main__.py     CLI: python3 -m testgate analyze ... / python3 -m testgate run <deliveryId>
 ```
 
 표준 라이브러리만 씁니다 (Docker 이미지의 python3로 동작).
 
 ## 데이터 형태
 
-요청 (필터가 만들고, 이후 파일로 저장):
-`{"deliveryId", "repo": "owner/name", "pr": 번호, "commit": 커밋ID 또는 null, "text": 서술}`
+요청 (필터가 `requests/<deliveryId>.json`으로 저장, 권한 600):
+`{"deliveryId", "repo": "owner/name", "pr": 번호, "commit": 커밋ID 또는 null, "text": 서술, "truncated", "free": 자유 대화 여부, "receivedAt"}`
 
-PR 맥락 (diff 소스가 만듦):
-`{"title", "body", "base_ref", "head_sha", "scope": "pr" 또는 "commit", "files": [{"path","status","additions","deletions","diff_included"}], "diff", "truncated"}`
+PR 맥락 (github-app `/api/pr` 응답을 `githubapp.py`가 변환):
+`{"title", "body", "base_ref", "head_sha", "scope": "pr" 또는 "commit", "commit", "files": [{"path","status","additions","deletions","diff_included"}], "diff", "truncated"}`
 
 Claude 출력 (스키마):
 `mode`(evaluate 또는 design), `summary`, `changes[]`(path, change_summary, tested[yes|partial|no|unclear], evidence_quote, request, scenarios[]), `notes`
@@ -83,7 +97,9 @@ Claude 출력 (스키마):
 v1은 `testgate.json`의 `analysis.knowledge_dirs`에 적힌 폴더의 `.json`, `.md` 파일을 읽습니다 (길이 상한 있음).
 `diagnosis.json` 같은 도메인 사전 페이지를 쓰려면 "어떤 PR에 어떤 문서가 해당하는가"를 정해야 합니다. 이것은 미정이며 문서 형식을 확인한 뒤 정합니다.
 
-## Stage 2 (github-app 변경이 필요한 부분, 아직 하지 않음)
+## github-app API
 
-- PR 정보와 diff 조회 엔드포인트 (서명된 요청, 설치 토큰 사용, 읽기 전용).
-- 결과 게시 엔드포인트 (서명된 요청, `deliveryId`로 중복 방지).
+- `POST /api/pr`: PR 제목, 설명, 기준·헤드 브랜치, 변경 파일 목록, diff를 돌려줍니다. `commit`을 주면 그 PR에 속한 커밋인지 확인한 뒤 그 커밋 하나의 diff만 줍니다. 읽기 전용입니다.
+- `POST /api/comment`: Bot 이름으로 PR에 코멘트를 씁니다. 같은 `deliveryId`는 한 번만 게시합니다.
+- 서명은 `x-hermes-timestamp`와 `x-hermes-signature`(`sha256=`HMAC(`<시각>.<바디>`))이고 300초가 넘으면 거부합니다. 키는 github-app의 `HERMES_API_SECRET`과 Hermes 쪽 환경 변수 `TESTGATE_GITHUB_APP_SECRET`이 같은 값입니다 (`docs/setup.md`).
+- 자세한 내용은 github-app의 `whatissink.md`와 `llms-todo.md`에 있습니다.

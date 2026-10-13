@@ -1,6 +1,6 @@
 # mock 테스트 절차
 
-목적: github-app이 보낸 요청이 Hermes에 도착하고, 필터가 `/qa` 코멘트만 통과시키는지 확인합니다.
+목적: github-app이 보낸 요청이 Hermes에 도착하고, 필터가 `/qa` 코멘트만 통과시키며, 통과한 요청을 래퍼가 분석하는지 확인합니다.
 수신 주소: `http://127.0.0.1:8644/webhooks/github-app` (이 PC 안에서만 접근할 수 있습니다).
 
 ## 사전 조건
@@ -41,10 +41,10 @@ pnpm 없이 쓰려면 `scripts/mock_post.sh <케이스>`와 `MOCK_DRY_RUN=1 scri
 | --- | --- | --- | --- |
 | plain, other-author, edited, issue | HTTP 200, `"status": "ignored"` | `script ignored` | 없음 |
 | bad-signature | HTTP 401, `Invalid signature` | `Invalid signature` | 없음 |
-| qa | HTTP 202, accepted | 세션 시작, 응답 `RECEIVED` | 있음 (LLM 호출 1회) |
+| qa 계열 | HTTP 202, accepted | 세션 시작(LLM은 `OK`만 답함), 래퍼가 별도로 분석 | 있음 (Claude 호출, 세션 LLM 호출 1회) |
 
-주의: `qa` 케이스만 에이전트를 실행합니다. 이 호출은 LLM 비용이 발생하고 세션이 하나 만들어집니다.
-이미 제가 `plain`, `other-author`, `edited`, `issue`, `bad-signature`는 실행해 보았습니다 (2026-10-13). `qa`는 실행하지 않았습니다.
+주의: `qa` 계열 케이스는 분석을 실제로 실행합니다. Claude 호출 비용이 들고(파일이 많은 PR은 목록가 $0.3 수준), 세션이 하나 만들어지고, `MOCK_REPO`와 `MOCK_PR`로 실제 PR을 가리키면 Bot 코멘트가 게시됩니다.
+가짜 레포(기본값)를 가리키면 github-app이 GitHub에서 PR을 찾지 못해 실패 코멘트 경로로 갑니다. 분석까지 보려면 실제 PR을 가리키고, 코멘트를 게시하고 싶지 않으면 `testgate.json`의 `analysis.post_comments`를 잠시 `false`로 둡니다.
 
 ## 2단계: github-app 경유 확인
 
@@ -53,7 +53,7 @@ pnpm 없이 쓰려면 `scripts/mock_post.sh <케이스>`와 `MOCK_DRY_RUN=1 scri
    - `HTTP_SINK_SECRET=` 뒤에 라우트의 secret을 넣습니다. 이미 설정했습니다.
 2. `cd ~/github-projects/github-app && pnpm svc:restart`
 3. 테스트용 PR에 일반 코멘트를 씁니다 (예: `test`). 최대 약 20초 뒤에 Hermes 로그에 `script ignored`가 나와야 합니다.
-4. 같은 PR에 `/qa test` 코멘트를 씁니다. Hermes 로그에 세션이 시작되고 응답이 기록되어야 합니다.
+4. 같은 PR에 `/qa test` 코멘트를 씁니다. Hermes 로그에 세션이 시작되고(응답 `OK`), 이어서 약 1분 안에 PR에 Bot 코멘트가 달려야 합니다.
 5. github-app 로그도 봅니다 (`~/github-projects/github-app`에서 `pnpm svc:logs`). `sink 전송 완료`가 나와야 합니다.
 
 ## 문제가 있을 때

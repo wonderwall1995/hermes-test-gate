@@ -10,8 +10,8 @@
 | 이 저장소 `scripts/qa_filter.py` | 웹훅 필터 원본 | 저장소 |
 | `$HERMES_HOME/scripts/testgate_qa_filter.py` | 필터 설치본 (복사본) | `scripts/install.sh` |
 | `$HERMES_HOME/testgate/lib/testgate/` | 분석기 패키지 설치본 | `scripts/install.sh` |
-| `$HERMES_HOME/testgate/testgate-run` | 세션이 실행하는 래퍼 (인자: delivery ID) | `scripts/install.sh` |
-| `$HERMES_HOME/testgate/requests/`, `reports/` | 필터가 저장한 요청, 분석 보고서 (30일 뒤 자동 삭제) | 자동 |
+| `$HERMES_HOME/testgate/testgate-run` | 필터가 백그라운드로 시작하는 래퍼 (인자: delivery ID) | `scripts/install.sh` |
+| `$HERMES_HOME/testgate/requests/`, `reports/`, `threads/` | 필터가 저장한 요청, 분석 보고서, PR 대화 기록 (30일 뒤 자동 삭제) | 자동 |
 | `$HERMES_HOME/testgate.json` | 허용 계정과 분석 설정 (비밀 아님) | 사용자 (저장소에 넣지 않음) |
 | `$HERMES_HOME/.env` | 비밀 값 (Hermes의 자격 증명 저장소). 필요한 이름은 저장소의 `.env.example` | 사용자 (이 프로젝트는 읽거나 쓰지 않음) |
 | `$HERMES_HOME/config.yaml` | Hermes 설정 (웹훅 활성화 등) | 사용자 |
@@ -41,7 +41,7 @@
   "analysis": {
     "claude_model": "claude-sonnet-5-5",
     "claude_effort": "medium",
-    "timeout_seconds": 300,
+    "timeout_seconds": 150,
     "max_diff_chars": 120000,
     "knowledge_dirs": [],
     "github_app_url": "http://127.0.0.1:3200",
@@ -122,4 +122,6 @@ github-app의 `.env`에는 두 종류의 키가 필요합니다. 서로 다른 �
 
 - 이미지에는 python3, curl, bash가 있습니다. 필터, 설치 스크립트, mock 도구는 이것만 씁니다. pnpm은 이미지에 없으므로 pnpm 스크립트는 호스트용 편의 기능입니다.
 - systemd가 없습니다. 게이트웨이 재시작은 컨테이너 재시작입니다.
-- 이후 분석 단계는 Claude Code CLI가 필요합니다. 공식 이미지에서 CLI 설치 여부는 확인하지 못했으며 (Dockerfile에 claude가 보이지 않음), 컨테이너 안에 설치하고 구독 로그인 상태를 볼륨(`$HERMES_HOME`)에 유지하는 방법을 분석 단계에서 정해야 합니다.
+- 분석에는 Claude Code CLI가 필요합니다. 공식 이미지에서 CLI 설치 여부는 확인하지 못했으며 (Dockerfile에 claude가 보이지 않음), 컨테이너 안에 설치하고 구독 로그인 상태를 볼륨(`$HERMES_HOME`)에 유지하는 방법을 정해야 합니다.
+- 필터가 래퍼를 백그라운드 프로세스로 띄웁니다. 컨테이너에서 이 프로세스가 끝까지 살아 있는지는 호스트에서만 확인했고 Docker에서는 시험하지 않았습니다.
+- 분석 중에 게이트웨이(컨테이너)를 재시작하면 그 건의 분석은 끊깁니다.
