@@ -59,7 +59,7 @@
 
 1. 호스트: `~/.hermes/.env`에 `TESTGATE_GITHUB_APP_SECRET=<값>`을 적습니다. 값은 github-app의 `.env`에 있는 `HERMES_API_SECRET`과 같습니다.
    Docker: 컨테이너 환경 변수로 같은 이름을 넘깁니다.
-2. Hermes는 터미널 도구의 하위 프로세스에서 자신의 비밀을 걸러 내므로, `config.yaml`에 이름을 등록해 넘기게 합니다.
+2. Hermes는 하위 프로세스(필터 스크립트와 터미널 도구)에서 자신의 비밀을 걸러 내므로, `config.yaml`에 이름을 등록해 넘기게 합니다.
 
 ```yaml
 terminal:
@@ -105,8 +105,9 @@ scripts/subscribe.sh          # pnpm route:subscribe
 
 라우트 `github-app`을 만들거나 갱신합니다. 이 스크립트는 다음을 합니다.
 - 이벤트는 `comment`만 받고, `testgate_qa_filter.py` 필터를 거칩니다.
-- 세션 프롬프트는 래퍼 하나(`testgate-run {deliveryId}`)만 실행하게 합니다. QA 서술은 프롬프트에 들어가지 않고 파일(`requests/`)로만 전달됩니다.
-- 이 라우트에만 `terminal` 도구를 허용합니다 (`webhook_subscriptions.json`의 `toolsets`).
+- 분석은 필터가 래퍼(`testgate-run`)를 백그라운드로 시작해서 합니다. 필터는 요청을 파일(`requests/`)로 저장하고 곧바로 끝나므로 Hermes의 스크립트 제한(30초)에 걸리지 않습니다.
+- Hermes 세션의 LLM은 분석을 실행하지 않습니다. 세션은 요청의 기록으로 남고, 래퍼가 끝날 때 상태 DB에서 `chat_id`로 세션을 찾아 이름을 붙입니다. 세션에는 도구를 주지 않습니다.
+- 필터가 호출하는 래퍼가 서명 키를 받으려면 `terminal.env_passthrough` 등록이 필요합니다 (아래 비밀 값 참고).
 - 이미 라우트가 있으면 기존 서명 키를 유지합니다. 새로 만들면 Hermes가 키를 한 번 출력하니 안전한 곳에 옮기세요.
 
 github-app의 `.env`에는 두 종류의 키가 필요합니다. 서로 다른 값입니다.

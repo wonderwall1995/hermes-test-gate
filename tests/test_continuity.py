@@ -414,7 +414,7 @@ class RunContinuityTest(Base):
         self.assertTrue((self.home / "testgate" / "threads" / "acme-org__r__3.json").exists())
 
     def execute_with_owners(self, delivery_id, owners):
-        return run_execute(delivery_id, self.home, self.settings, owners, self.claude, self.app), None
+        return self.execute(delivery_id, owners=owners)
 
     def test_failure_is_recorded_and_does_not_become_history(self):
         os.environ["FAKE_OUTPUTS"] = "not-json"   # runner가 파싱하는 출력이 아니라 fake 자체가 깨지게 한다
@@ -426,12 +426,6 @@ class RunContinuityTest(Base):
         self.assertEqual(data["entries"][0]["status"], "failed")
         self.assertEqual([p["deliveryId"] for path, p in FakeApp.log if path == "/api/comment"], ["d-1-failed"])
         self.assertIn("#1", [p["body"] for path, p in FakeApp.log if path == "/api/comment"][0])
-
-
-from testgate import run as _run_module  # noqa: E402
-
-def run_execute(*args, **kwargs):
-    return _run_module.execute(*args, env={"HERMES_SESSION_ID": "s"}, hermes_run=lambda cmd, **k: subprocess.CompletedProcess(cmd, 0), **kwargs)
 
 
 if __name__ == "__main__":

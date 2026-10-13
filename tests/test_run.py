@@ -105,13 +105,22 @@ class Base(unittest.TestCase):
         folder.mkdir(parents=True, exist_ok=True)
         (folder / f"{delivery_id}.json").write_text(json.dumps(data))
 
-    def execute(self, delivery_id="d-1", **kw):
+    def seed_session(self, delivery_id, route="github-app"):
+        """Hermes가 만들어 두는 세션 행을 흉내 낸다. 래퍼는 이 행을 chat_id로 찾아 이름을 바꾼다."""
+        conn = sqlite3.connect(self.home / "state.db")
+        conn.execute("create table if not exists sessions (id text, chat_id text, started_at real)")
+        conn.execute("insert into sessions values (?, ?, ?)", (f"sess_{delivery_id}", f"webhook:{route}:{delivery_id}", time.time()))
+        conn.commit()
+        conn.close()
+
+    def execute(self, delivery_id="d-1", owners=("alice",), **kw):
         calls = []
         def fake_run(cmd, **k):
             calls.append(cmd)
             return subprocess.CompletedProcess(cmd, 0)
-        summary = run.execute(delivery_id, self.home, self.settings, ["alice"], self.claude, self.app,
-                              env={"HERMES_SESSION_ID": "sess_1"}, hermes_run=fake_run, **kw)
+        self.seed_session(delivery_id)
+        summary = run.execute(delivery_id, self.home, self.settings, list(owners), self.claude, self.app,
+                              hermes_run=fake_run, sleep=lambda s: None, **kw)
         return summary, calls
 
 
@@ -194,7 +203,7 @@ class ExecuteTest(Base):
         # 보고서 경로를 출력에 넣으면 Hermes가 파일 첨부로 오해한다
         self.assertEqual(summary["report"], "saved")
         self.assertNotIn("/", run.format_summary(dict(summary, comment="skipped")))
-        self.assertEqual(renames[0][1:], ["sessions", "rename", "sess_1", "[PR3 - T #1]"])
+        self.assertEqual(renames[0][1:], ["sessions", "rename", "sess_d-1", "[PR3 - T #1]"])
         posted = [p for path, p in FakeApp.log if path == "/api/comment"][0]
         self.assertEqual(posted["deliveryId"], "d-1")
         self.assertTrue(posted["body"].rstrip().endswith("세션: `[PR3 - T #1]`"))
@@ -273,26 +282,54 @@ class LoadAppTest(unittest.TestCase):
 
 
 class SessionAndCleanupTest(Base):
-    def test_session_id_from_env_and_db(self):
-        self.assertEqual(run.find_session_id(self.home, "github-app", "d-1", {"HERMES_SESSION_ID": "s1"}), "s1")
-        self.assertIsNone(run.find_session_id(self.home, "github-app", "d-1", {"HERMES_SESSION_ID": "bad id;"}))
+    def make_db(self, rows):
         conn = sqlite3.connect(self.home / "state.db")
         conn.execute("create table sessions (id text, chat_id text, started_at real)")
-        conn.execute("insert into sessions values ('old', 'webhook:github-app:d-1', 1)")
-        conn.execute("insert into sessions values ('new', 'webhook:github-app:d-1', 2)")
+        for row in rows:
+            conn.execute("insert into sessions values (?, ?, ?)", row)
         conn.commit()
         conn.close()
-        self.assertEqual(run.find_session_id(self.home, "github-app", "d-1", {}), "new")
-        self.assertIsNone(run.find_session_id(self.home, "github-app", "other", {}))
+
+    def test_session_is_found_by_chat_id_only(self):
+        self.make_db([("old", "webhook:github-app:d-1", 1), ("new", "webhook:github-app:d-1", 2)])
+        self.assertEqual(run.find_session_id(self.home, "github-app", "d-1"), "new")
+        self.assertIsNone(run.find_session_id(self.home, "github-app", "other"))
+        self.assertIsNone(run.find_session_id(self.home, "other-route", "d-1"))
+
+    def test_session_environment_variable_is_ignored(self):
+        # 게이트웨이는 프로세스 환경에 마지막 세션의 ID를 덮어쓴다. 믿으면 엉뚱한 세션의 이름을 바꾼다.
+        os.environ["HERMES_SESSION_ID"] = "someone-elses-session"
+        self.addCleanup(lambda: os.environ.pop("HERMES_SESSION_ID", None))
+        self.assertIsNone(run.find_session_id(self.home, "github-app", "d-1"))
+
+    def test_waits_for_the_session_row_to_appear(self):
+        self.make_db([])
+        waits = []
+        def sleep(seconds):
+            waits.append(seconds)
+            if len(waits) == 3:
+                conn = sqlite3.connect(self.home / "state.db")
+                conn.execute("insert into sessions values ('late', 'webhook:github-app:d-1', 5)")
+                conn.commit()
+                conn.close()
+        self.assertEqual(run.wait_for_session(self.home, "github-app", "d-1", tries=10, delay=0.5, sleep=sleep), "late")
+        self.assertEqual(waits, [0.5, 0.5, 0.5])
+
+    def test_gives_up_after_the_limit(self):
+        self.make_db([])
+        waits = []
+        self.assertIsNone(run.wait_for_session(self.home, "r", "d", tries=4, delay=1, sleep=waits.append))
+        self.assertEqual(len(waits), 3)
 
     def test_rename_outcomes(self):
         ok = lambda cmd, **k: subprocess.CompletedProcess(cmd, 0)
         bad = lambda cmd, **k: subprocess.CompletedProcess(cmd, 1)
-        env = {"HERMES_SESSION_ID": "s1"}
-        self.assertEqual(run.rename_session(self.home, "r", "d", "[PR1]", "/bin/true", env, ok), "renamed")
-        self.assertEqual(run.rename_session(self.home, "r", "d", "[PR1]", "/bin/true", env, bad), "failed")
-        self.assertEqual(run.rename_session(self.home, "r", "d", "[PR1]", "/nonexistent/hermes", env, ok), "skipped:no_hermes_binary")
-        self.assertEqual(run.rename_session(self.home, "r", "d", "[PR1]", "/bin/true", {}, ok), "skipped:no_session")
+        nosleep = lambda s: None
+        self.make_db([("s1", "webhook:r:d", 1)])
+        self.assertEqual(run.rename_session(self.home, "r", "d", "[PR1]", "/bin/true", ok, nosleep), "renamed")
+        self.assertEqual(run.rename_session(self.home, "r", "d", "[PR1]", "/bin/true", bad, nosleep), "failed")
+        self.assertEqual(run.rename_session(self.home, "r", "d", "[PR1]", "/nonexistent/hermes", ok, nosleep), "skipped:no_hermes_binary")
+        self.assertEqual(run.rename_session(self.home, "r", "nope", "[PR1]", "/bin/true", ok, nosleep), "skipped:no_session")
 
     def test_cleanup_removes_only_old_files(self):
         for sub in ("requests", "reports"):
@@ -314,22 +351,38 @@ class FilterSpoolTest(unittest.TestCase):
         "kind": "comment", "action": "created", "target": "pull_request", "number": 7, "commentId": 1, "url": "u",
         "repo": {"owner": "alice", "name": "r", "fullName": "alice/r"}, "author": {"login": "alice", "type": "User"},
         "body": "/qa [abc1234] 비밀 서술\n둘째 줄"}}
+    LAUNCHER = "#!/usr/bin/env bash\necho \"$1\" >> \"$(dirname \"$0\")/launched.txt\"\n${LAUNCH_SLEEP:+sleep $LAUNCH_SLEEP}\n"
 
-    def run_filter(self, payload, extra_env=None):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        cfg = pathlib.Path(tmp.name) / "testgate.json"
-        cfg.write_text(json.dumps({"allowed_authors": ["alice"], "allowed_repo_owners": ["alice"]}))
-        env = dict(os.environ, TESTGATE_CONFIG=str(cfg))
+    def run_filter(self, payload, extra_env=None, launcher=True, home=None):
+        if home is None:
+            tmp = tempfile.TemporaryDirectory()
+            self.addCleanup(tmp.cleanup)
+            home = pathlib.Path(tmp.name)
+            (home / "testgate.json").write_text(json.dumps({"allowed_authors": ["alice"], "allowed_repo_owners": ["alice"]}))
+            if launcher:
+                (home / "testgate").mkdir()
+                script = home / "testgate" / "testgate-run"
+                script.write_text(self.LAUNCHER)
+                script.chmod(0o755)
+        env = dict(os.environ, TESTGATE_CONFIG=str(home / "testgate.json"))
         env.pop("TESTGATE_NO_SPOOL", None)
         env.update(extra_env or {})
         proc = subprocess.run([sys.executable, str(ROOT / "scripts" / "qa_filter.py")], input=json.dumps(payload),
-                              capture_output=True, text=True, env=env)
-        return proc, pathlib.Path(tmp.name)
+                              capture_output=True, text=True, env=env, timeout=20)
+        return proc, home
+
+    def launched(self, home, wait=3.0):
+        marker = home / "testgate" / "launched.txt"
+        deadline = time.time() + wait
+        while time.time() < deadline:
+            if marker.exists() and marker.read_text().strip():
+                return marker.read_text().split()
+            time.sleep(0.05)
+        return []
 
     def test_spools_request_and_hides_text_from_output(self):
         proc, home = self.run_filter(self.PAYLOAD)
-        self.assertEqual(proc.returncode, 0)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
         out = json.loads(proc.stdout)
         self.assertEqual(out["qa"]["commit"], "abc1234")
         self.assertNotIn("비밀 서술", proc.stdout)
@@ -337,19 +390,40 @@ class FilterSpoolTest(unittest.TestCase):
         spooled = home / "testgate" / "requests" / "e69-1.json"
         self.assertEqual(stat.S_IMODE(spooled.stat().st_mode), 0o600)
         data = json.loads(spooled.read_text(encoding="utf-8"))
-        self.assertEqual((data["repo"], data["pr"], data["commit"]), ("alice/r", 7, "abc1234"))
+        self.assertEqual((data["repo"], data["pr"], data["commit"], data["free"]), ("alice/r", 7, "abc1234", False))
         self.assertEqual(data["text"], "비밀 서술\n둘째 줄")
 
-    def test_existing_request_is_not_overwritten(self):
+    def test_filter_starts_the_wrapper_in_the_background_with_the_delivery_id(self):
         proc, home = self.run_filter(self.PAYLOAD)
+        self.assertEqual(proc.returncode, 0)
+        self.assertEqual(self.launched(home), ["e69-1"])
+
+    def test_filter_returns_without_waiting_for_the_wrapper(self):
+        started = time.time()
+        proc, home = self.run_filter(self.PAYLOAD, {"LAUNCH_SLEEP": "4"})
+        elapsed = time.time() - started
+        self.assertEqual(proc.returncode, 0)
+        self.assertTrue(proc.stdout.startswith("{"))
+        self.assertLess(elapsed, 3.0, "필터가 래퍼가 끝나기를 기다렸다 (Hermes의 30초 제한에 걸린다)")
+        self.assertEqual(self.launched(home), ["e69-1"])
+
+    def test_missing_wrapper_fails_closed_and_stores_nothing(self):
+        proc, home = self.run_filter(self.PAYLOAD, launcher=False)
+        self.assertEqual(proc.returncode, 1)
+        self.assertEqual(proc.stdout, "")
+        self.assertIn("분석 래퍼", proc.stderr)
+        self.assertFalse((home / "testgate" / "requests").exists())
+
+    def test_existing_request_is_not_overwritten_or_launched_again(self):
+        proc, home = self.run_filter(self.PAYLOAD)
+        self.assertEqual(self.launched(home), ["e69-1"])
         first = (home / "testgate" / "requests" / "e69-1.json").read_text()
         payload = json.loads(json.dumps(self.PAYLOAD))
         payload["event"]["body"] = "/qa 다른 서술"
-        cfg = home / "testgate.json"
-        env = dict(os.environ, TESTGATE_CONFIG=str(cfg))
-        env.pop("TESTGATE_NO_SPOOL", None)
-        subprocess.run([sys.executable, str(ROOT / "scripts" / "qa_filter.py")], input=json.dumps(payload), capture_output=True, text=True, env=env)
+        self.run_filter(payload, home=home)
+        time.sleep(0.5)
         self.assertEqual((home / "testgate" / "requests" / "e69-1.json").read_text(), first)
+        self.assertEqual((home / "testgate" / "launched.txt").read_text().split(), ["e69-1"])
 
     def test_bad_delivery_id_fails_closed(self):
         payload = json.loads(json.dumps(self.PAYLOAD))
@@ -357,19 +431,30 @@ class FilterSpoolTest(unittest.TestCase):
         proc, home = self.run_filter(payload)
         self.assertEqual(proc.returncode, 1)
         self.assertEqual(proc.stdout, "")
-        self.assertFalse((home / "testgate").exists())
+        self.assertFalse((home / "testgate" / "requests").exists())
+        self.assertEqual(self.launched(home, wait=0.5), [])
 
-    def test_no_spool_mode_prints_full_result(self):
+    def test_no_spool_mode_prints_full_result_and_launches_nothing(self):
         proc, home = self.run_filter(self.PAYLOAD, {"TESTGATE_NO_SPOOL": "1"})
         self.assertIn("비밀 서술", proc.stdout)
-        self.assertFalse((home / "testgate").exists())
+        self.assertFalse((home / "testgate" / "requests").exists())
+        self.assertEqual(self.launched(home, wait=0.5), [])
 
-    def test_discarded_requests_write_nothing(self):
+    def test_discarded_requests_write_and_launch_nothing(self):
         payload = json.loads(json.dumps(self.PAYLOAD))
         payload["event"]["body"] = "그냥 코멘트"
         proc, home = self.run_filter(payload)
         self.assertEqual(proc.stdout, "")
-        self.assertFalse((home / "testgate").exists())
+        self.assertFalse((home / "testgate" / "requests").exists())
+        self.assertEqual(self.launched(home, wait=0.5), [])
+
+    def test_free_flag_is_stored(self):
+        payload = json.loads(json.dumps(self.PAYLOAD))
+        payload["event"]["body"] = "/qa free: 질문"
+        proc, home = self.run_filter(payload)
+        data = json.loads((home / "testgate" / "requests" / "e69-1.json").read_text(encoding="utf-8"))
+        self.assertTrue(data["free"])
+        self.assertTrue(json.loads(proc.stdout)["qa"]["free"])
 
 
 if __name__ == "__main__":
