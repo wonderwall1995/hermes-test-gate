@@ -4,9 +4,10 @@
 출력: 통과하면 stdout에 JSON 한 개. 버리면 아무것도 출력하지 않고 종료 코드 0으로 끝난다.
 이 스크립트는 코멘트 본문을 명령으로 실행하지 않는다. 본문은 비신뢰 입력이다.
 
-코멘트 문법은 두 가지뿐이다.
-  /qa [커밋ID] 자유 서술
-  /qa 자유 서술
+코멘트 문법은 세 가지이다.
+  /qa [커밋ID] 자유 서술        테스트 평가 또는 설계서
+  /qa 자유 서술                 테스트 평가 또는 설계서
+  /qa free: [커밋ID] 자유 서술  보고서 없는 자유 대화 (콜론이 붙은 소문자 free: 만 인정한다)
 커밋ID는 대괄호 안의 16진수 7~40자이다. 대괄호가 없으면 전부 자유 서술로 본다.
 자유 서술은 여러 줄이어도 된다. 대상 브랜치(base)는 코멘트에 쓰지 않는다. PR 정보에서 얻는다.
 
@@ -28,6 +29,7 @@ DELIVERY_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 COMMAND_PREFIX = "/qa"
 MAX_TEXT_CHARS = 10000
 # 명령어 바로 뒤에 오는 선택적 커밋ID. 대괄호가 필수이다.
+FREE_PREFIX = "free:"
 COMMIT_PATTERN = re.compile(r"^\[([0-9a-fA-F]{7,40})\]")
 
 
@@ -109,7 +111,7 @@ def decide(payload, config):
 def parse_qa(body):
     """코멘트 본문에서 /qa 명령을 읽는다. 명령이 아니면 None을 반환한다.
 
-    반환: {"commit": 커밋ID 또는 None, "text": 자유 서술, "truncated": 잘림 여부}
+    반환: {"commit": 커밋ID 또는 None, "text": 자유 서술, "truncated": 잘림 여부, "free": 자유 대화 여부}
     """
     stripped = body.strip()
     if not stripped.startswith(COMMAND_PREFIX):
@@ -120,6 +122,9 @@ def parse_qa(body):
         return None
 
     rest = rest.strip()
+    free = rest.startswith(FREE_PREFIX)
+    if free:
+        rest = rest[len(FREE_PREFIX):].strip()
     commit = None
     match = COMMIT_PATTERN.match(rest)
     if match:
@@ -127,7 +132,7 @@ def parse_qa(body):
         rest = rest[match.end():].strip()
 
     truncated = len(rest) > MAX_TEXT_CHARS
-    return {"commit": commit, "text": rest[:MAX_TEXT_CHARS], "truncated": truncated}
+    return {"commit": commit, "text": rest[:MAX_TEXT_CHARS], "truncated": truncated, "free": free}
 
 
 def spool_dir():
@@ -151,6 +156,7 @@ def write_request(payload, parsed):
         "commit": parsed["commit"],
         "text": parsed["text"],
         "truncated": parsed["truncated"],
+        "free": parsed["free"],
         "receivedAt": int(time.time()),
     }
     directory = spool_dir()
@@ -188,6 +194,7 @@ def main():
             result = dict(result, qa={
                 "commit": result["qa"]["commit"],
                 "truncated": result["qa"]["truncated"],
+                "free": result["qa"]["free"],
                 "text_chars": len(result["qa"]["text"]),
             })
         sys.stdout.write(json.dumps(result, ensure_ascii=False))

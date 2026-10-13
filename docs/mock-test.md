@@ -28,7 +28,8 @@ pnpm mock:qa      # 에이전트를 시작하는 케이스 (LLM 호출 1회)
 pnpm filter:test  # 코멘트 문법 단위 테스트
 ```
 
-`/qa` 케이스(모두 에이전트를 시작합니다): `mock:qa`, `mock:qa-commit`(`[커밋ID]` 포함), `mock:qa-multiline`(여러 줄), `mock:qa-design`(문서 요청 서술), `mock:qa-empty`(서술 없음).
+`/qa` 케이스(모두 에이전트를 시작합니다): `mock:qa`, `mock:qa-commit`(`[커밋ID]` 포함), `mock:qa-multiline`(여러 줄), `mock:qa-design`(문서 요청 서술), `mock:qa-empty`(서술 없음), `mock:qa-free`(`/qa free:` 자유 대화), `mock:qa-free-commit`(`/qa free: [커밋ID]`).
+실제 PR을 가리키면 Bot 코멘트가 게시됩니다 (`MOCK_REPO`, `MOCK_PR`).
 
 개별 실행: `pnpm mock:plain`, `pnpm mock:other-author`, `pnpm mock:edited`, `pnpm mock:issue`, `pnpm mock:bad-signature`.
 상태 확인: `pnpm gateway:status`. 필터를 고친 뒤에는 `pnpm filter:install`로 설치본을 갱신합니다.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Hermes 웹훅 라우트에 가짜 github-app 요청을 보낸다.
 # 사용법: scripts/mock_post.sh <케이스>
-# 케이스: qa | qa-commit | qa-multiline | qa-design | qa-empty | plain | other-author | edited | issue | bad-signature
+# 케이스: qa | qa-commit | qa-multiline | qa-design | qa-empty | qa-free | qa-free-commit | plain | other-author | edited | issue | bad-signature
 # MOCK_DRY_RUN=1 이면 요청을 보내지 않고 필터 스크립트(scripts/qa_filter.py)의 결과만 출력한다. 에이전트를 실행하지 않는다.
 # HERMES_HOME 기본값은 ~/.hermes 이다 (Docker 이미지는 /opt/data).
 # 서명 키는 $HERMES_HOME/webhook_subscriptions.json 의 라우트 설정에서 읽는다. 키를 화면에 출력하지 않는다.
@@ -32,6 +32,8 @@ case "$CASE" in
   qa-multiline) BODY_TEXT=$'/qa [abc1421511] 첫 줄 서술\n\n- 로그 확인: 통과\n- 모킹 여부: 확인함\n\n"따옴표"와 \\ 역슬래시도 포함' ;;
   qa-design) BODY_TEXT="/qa 야 나 솔직히 테스트 뭐해야할지 모르겠는데 네가 문서좀 뽑아봐" ;;
   qa-empty) BODY_TEXT="/qa" ;;
+  qa-free) BODY_TEXT="/qa free: 이 PR 이 무엇을 바꾸는지 두 문장으로 설명해줘" ;;
+  qa-free-commit) BODY_TEXT="/qa free: [abc1421511] 이 커밋의 의도가 뭐야?" ;;
   plain) BODY_TEXT="looks good to me" ;;
   other-author) AUTHOR="someone-else" ;;
   edited) ACTION="edited" ;;

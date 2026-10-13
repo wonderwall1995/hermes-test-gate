@@ -15,7 +15,7 @@ class PromptTest(unittest.TestCase):
         ids = set(re.findall(r"<<<DATA name=\S+ id=([0-9a-f]+)>>>", out))
         self.assertEqual(len(ids), 1)
         marker = ids.pop()
-        self.assertEqual(out.count(f"<<<END id={marker}>>>"), 5)
+        self.assertEqual(out.count(f"<<<END id={marker}>>>"), 7)
         self.assertNotIn(marker, req["text"])
 
     def test_fake_end_marker_in_text_does_not_match_real_marker(self):
@@ -41,9 +41,36 @@ REQ = {"pr": 3, "commit": None}
 
 class ReportTest(unittest.TestCase):
     def test_session_name(self):
-        self.assertEqual(report.session_name(3, "abc1421511"), "[PR3-abc1421511]")
         self.assertEqual(report.session_name(3), "[PR3]")
-        self.assertEqual(report.session_name(3, None), "[PR3]")
+        self.assertEqual(report.session_name(3, "분석기 추가"), "[PR3 - 분석기 추가]")
+        self.assertEqual(report.session_name(3, "분석기 추가", "abc1421511"), "[PR3 - 분석기 추가 - abc1421511]")
+        self.assertEqual(report.session_name(3, "분석기 추가", "abc1421511", 2), "[PR3 - 분석기 추가 - abc1421511 #2]")
+        self.assertEqual(report.session_name(3, None, None, 4), "[PR3 #4]")
+        self.assertEqual(report.session_name(3, "", "abc1234"), "[PR3 - abc1234]")
+
+    def test_title_is_cleaned_and_capped(self):
+        name = report.session_name(3, "[x]`y`\n끝" + "가" * 60, None, 1)
+        self.assertNotIn("`", name)
+        self.assertNotIn("\n", name)
+        self.assertEqual(name.count("["), 1)
+        self.assertEqual(name.count("]"), 1)
+        self.assertLessEqual(len(report.clean_title("가" * 100)), report.TITLE_LIMIT + 1)
+        self.assertEqual(report.clean_title(None), "")
+
+    def test_images_and_links_are_defanged(self):
+        out = report.esc("![a](https://e.test/?d=1) [l](u)")
+        self.assertNotIn("](", out)
+        self.assertNotIn("![", out)
+        block = report.esc_markdown("본문 ![i](https://e.test/x)\n```\n<tag> @user\n```\n@bob <b>")
+        self.assertNotIn("![", block)
+        self.assertIn("<tag> @\u200buser", block)
+        self.assertIn("&lt;b&gt;", block)
+        self.assertEqual(report.esc_markdown("```\n미닫힘").splitlines()[-1], "```")
+
+    def test_free_render(self):
+        md = report.render_free("답변 @x", "[PR3 - T #1]")
+        self.assertTrue(md.rstrip().endswith("세션: `[PR3 - T #1]`"))
+        self.assertNotIn("@x", md)
 
     def test_footer_is_last_line(self):
         md = report.render(REQ, CONTEXT, RESULT, "more_tests_needed", [], "[PR3]")
