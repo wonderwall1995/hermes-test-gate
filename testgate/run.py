@@ -81,11 +81,12 @@ def write_private(path, text):
         handle.write(text)
 
 
-def find_session_id(home, route, delivery_id, env):
-    """이 요청의 Hermes 세션 ID. 환경 변수가 있으면 그것을, 없으면 상태 DB에서 chat_id로 찾는다."""
-    from_env = env.get("HERMES_SESSION_ID")
-    if from_env and re.match(r"^[A-Za-z0-9_.-]+$", from_env):
-        return from_env
+def find_session_id(home, route, delivery_id):
+    """이 요청의 Hermes 세션 ID를 상태 DB에서 chat_id로 찾는다.
+
+    환경 변수 HERMES_SESSION_ID는 쓰지 않는다. 게이트웨이가 프로세스 전체에 마지막 세션의 값을 덮어쓰므로
+    세션 밖에서 실행되는 래퍼는 엉뚱한 세션의 이름을 바꿀 수 있다.
+    """
     db = pathlib.Path(home) / "state.db"
     try:
         conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=5)
@@ -101,10 +102,20 @@ def find_session_id(home, route, delivery_id, env):
     return row[0] if row else None
 
 
-def rename_session(home, route, delivery_id, name, hermes_binary, env=None, run=subprocess.run):
+def wait_for_session(home, route, delivery_id, tries=20, delay=1.0, sleep=time.sleep):
+    """세션 행이 생길 때까지 기다린다. 래퍼는 세션보다 먼저 시작되므로 빨리 끝나는 요청에서는 아직 없을 수 있다."""
+    for attempt in range(tries):
+        session_id = find_session_id(home, route, delivery_id)
+        if session_id:
+            return session_id
+        if attempt + 1 < tries:
+            sleep(delay)
+    return None
+
+
+def rename_session(home, route, delivery_id, name, hermes_binary, run=subprocess.run, sleep=time.sleep):
     """세션 이름을 바꾼다. 실패해도 분석 결과에는 영향이 없으며 이유만 돌려준다."""
-    env = os.environ if env is None else env
-    session_id = find_session_id(home, route, delivery_id, env)
+    session_id = wait_for_session(home, route, delivery_id, sleep=sleep)
     if not session_id:
         return "skipped:no_session"
     binary = shutil.which(hermes_binary) or (hermes_binary if os.path.isabs(hermes_binary) and os.access(hermes_binary, os.X_OK) else None)
@@ -117,7 +128,7 @@ def rename_session(home, route, delivery_id, name, hermes_binary, env=None, run=
     return "renamed" if result.returncode == 0 else "failed"
 
 
-def execute(delivery_id, home, settings, allowed_owners, claude, app, env=None, hermes_run=subprocess.run):
+def execute(delivery_id, home, settings, allowed_owners, claude, app, hermes_run=subprocess.run, sleep=time.sleep):
     """분석 전체를 실행하고 요약 사전을 돌려준다. 오류는 요약의 result=failed 로 나타낸다."""
     summary = {"result": "failed", "verdict": "-", "mode": "-", "session": "-", "report": "-", "comment": "skipped", "rename": "skipped"}
     cleanup(home, settings["retention_days"])
@@ -189,7 +200,7 @@ def execute(delivery_id, home, settings, allowed_owners, claude, app, env=None, 
         except diffsource.DiffSourceError as exc:
             summary["comment"] = "failed"
             summary.setdefault("error", str(exc)[:200])
-    summary["rename"] = rename_session(home, settings["route_name"], delivery_id, name, settings["hermes_binary"], env, hermes_run)
+    summary["rename"] = rename_session(home, settings["route_name"], delivery_id, name, settings["hermes_binary"], hermes_run, sleep)
     return summary
 
 

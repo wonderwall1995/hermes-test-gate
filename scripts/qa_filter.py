@@ -4,6 +4,10 @@
 출력: 통과하면 stdout에 JSON 한 개. 버리면 아무것도 출력하지 않고 종료 코드 0으로 끝난다.
 이 스크립트는 코멘트 본문을 명령으로 실행하지 않는다. 본문은 비신뢰 입력이다.
 
+통과한 요청은 이 스크립트가 직접 분석 래퍼(testgate/testgate-run)를 백그라운드로 시작한다.
+Hermes 세션의 LLM은 분석을 실행하지 않는다 (LLM이 자동화 요청을 보안상 거부하는 경우가 있어 분석이 조용히 사라지기 때문).
+래퍼를 찾을 수 없으면 아무것도 하지 않고 종료 코드 1로 끝난다 (fail closed).
+
 코멘트 문법은 세 가지이다.
   /qa [커밋ID] 자유 서술        테스트 평가 또는 설계서
   /qa 자유 서술                 테스트 평가 또는 설계서
@@ -22,6 +26,7 @@ import json
 import os
 import pathlib
 import re
+import subprocess
 import sys
 import time
 
@@ -140,10 +145,27 @@ def spool_dir():
     return config_path().parent / "testgate" / "requests"
 
 
+def launcher_path():
+    """분석 래퍼 경로. 설정 파일이 있는 폴더 아래의 testgate/testgate-run 이다."""
+    return config_path().parent / "testgate" / "testgate-run"
+
+
+def launch(delivery_id):
+    """분석 래퍼를 백그라운드로 시작하고 기다리지 않는다.
+
+    표준 입출력을 모두 닫고 새 세션으로 띄운다. 그렇지 않으면 Hermes가 이 스크립트의 출력이 끝나기를 기다려 래퍼가 끝날 때까지 멈춘다.
+    """
+    subprocess.Popen(
+        [str(launcher_path()), delivery_id],
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        start_new_session=True, close_fds=True, cwd=str(launcher_path().parent),
+    )
+
+
 def write_request(payload, parsed):
     """통과한 요청을 파일로 저장한다. 에이전트 프롬프트에는 본문을 넣지 않고 이 파일로 전달한다.
 
-    같은 delivery ID의 파일이 이미 있으면 덮어쓰지 않는다.
+    같은 delivery ID의 파일이 이미 있으면 덮어쓰지 않고 False를 돌려준다. 새로 저장하면 True이다.
     """
     delivery_id = payload.get("deliveryId")
     if not isinstance(delivery_id, str) or not DELIVERY_ID_PATTERN.match(delivery_id):
@@ -163,12 +185,13 @@ def write_request(payload, parsed):
     directory.mkdir(parents=True, exist_ok=True)
     target = directory / f"{delivery_id}.json"
     if target.exists():
-        return
+        return False
     temp = directory / f".{delivery_id}.tmp"
     fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         json.dump(request, handle, ensure_ascii=False)
     os.replace(temp, target)
+    return True
 
 
 def main():
@@ -185,10 +208,16 @@ def main():
     result = decide(payload, config)
     if result is not None:
         if not os.environ.get("TESTGATE_NO_SPOOL"):
+            # 래퍼가 없으면 요청을 저장하지도 않고 버린다. 저장만 되고 아무도 처리하지 않는 요청을 만들지 않기 위해서다.
+            if not os.access(launcher_path(), os.X_OK):
+                sys.stderr.write(f"분석 래퍼를 실행할 수 없다: {launcher_path()}")
+                sys.exit(1)
             try:
-                write_request(payload, result["qa"])
+                created = write_request(payload, result["qa"])
+                if created:
+                    launch(payload["deliveryId"])
             except (ConfigError, OSError, KeyError, TypeError) as exc:
-                sys.stderr.write(f"요청을 저장할 수 없다: {exc}")
+                sys.stderr.write(f"요청을 처리할 수 없다: {exc}")
                 sys.exit(1)
             # 서술 본문은 파일로만 전달한다. Hermes가 쓰는 출력에는 길이만 남긴다.
             result = dict(result, qa={
