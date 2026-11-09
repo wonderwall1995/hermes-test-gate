@@ -8,6 +8,9 @@
 Hermes 세션의 LLM은 분석을 실행하지 않는다 (LLM이 자동화 요청을 보안상 거부하는 경우가 있어 분석이 조용히 사라지기 때문).
 래퍼를 찾을 수 없으면 아무것도 하지 않고 종료 코드 1로 끝난다 (fail closed).
 
+지원하는 위치는 PR 대화창 코멘트뿐이다. 이슈 코멘트와 코드 줄에 단 리뷰 코멘트에서 /qa 를 쓰면
+분석하지 않고 래퍼가 안내 코멘트만 단다 (결과의 "unsupported" 값). 커밋 코멘트는 번호가 없어 답할 수 없으므로 버린다.
+
 코멘트 문법은 세 가지이다.
   /qa [커밋ID] 자유 서술        테스트 평가 또는 설계서
   /qa 자유 서술                 테스트 평가 또는 설계서
@@ -15,9 +18,9 @@ Hermes 세션의 LLM은 분석을 실행하지 않는다 (LLM이 자동화 요�
 커밋ID는 대괄호 안의 16진수 7~40자이다. 대괄호가 없으면 전부 자유 서술로 본다.
 자유 서술은 여러 줄이어도 된다. 대상 브랜치(base)는 코멘트에 쓰지 않는다. PR 정보에서 얻는다.
 
-허용 계정은 이 파일에 쓰지 않는다. 프로젝트 밖의 설정 파일 testgate.json에서 읽는다.
+허용 계정은 이 파일에 쓰지 않는다. 프로젝트 폴더의 설정 파일 testgate.json(저장소에는 올리지 않음)에서 읽는다.
   {"allowed_authors": ["계정"], "allowed_repo_owners": ["계정"]}
-설정 파일 찾는 순서: 환경 변수 TESTGATE_CONFIG, 환경 변수 HERMES_HOME, 이 파일이 있는 폴더의 상위 폴더.
+설정 파일 찾는 순서: 환경 변수 TESTGATE_CONFIG, $HERMES_HOME/testgate/config.path (install.sh 가 적은 저장소 안의 경로), $HERMES_HOME/testgate.json.
 설치 위치가 $HERMES_HOME/scripts 이므로 마지막 경로가 $HERMES_HOME 과 같다.
 설정 파일이 없거나 잘못되면 모든 요청을 버리고 종료 코드 1로 끝난다 (fail closed).
 """
@@ -30,6 +33,8 @@ import subprocess
 import sys
 import time
 
+# 분석은 하지 않고 안내 코멘트만 다는 위치. 값은 github-app이 붙이는 target 이름이다.
+UNSUPPORTED_TARGETS = ("issue", "pull_request_review")
 DELIVERY_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 COMMAND_PREFIX = "/qa"
 MAX_TEXT_CHARS = 10000
@@ -42,15 +47,30 @@ class ConfigError(Exception):
     """설정 파일이 없거나 잘못되었을 때 발생한다."""
 
 
+def home_dir():
+    """Hermes 홈 폴더. 요청 파일과 래퍼가 이 아래에 있다. 설정 파일의 위치와는 무관하다."""
+    home = os.environ.get("HERMES_HOME")
+    if home:
+        return pathlib.Path(home)
+    return pathlib.Path(__file__).resolve().parent.parent
+
+
 def config_path():
-    """설정 파일 경로를 반환한다."""
+    """설정 파일 경로를 반환한다. 순서: 환경 변수 TESTGATE_CONFIG, 설치가 남긴 안내 파일, 홈 폴더의 testgate.json.
+
+    설정 파일은 저장소(프로젝트 폴더)에 있다. install.sh 가 그 경로를 $HERMES_HOME/testgate/config.path 에 적어 둔다.
+    """
     explicit = os.environ.get("TESTGATE_CONFIG")
     if explicit:
         return pathlib.Path(explicit)
-    home = os.environ.get("HERMES_HOME")
-    if home:
-        return pathlib.Path(home) / "testgate.json"
-    return pathlib.Path(__file__).resolve().parent.parent / "testgate.json"
+    try:
+        for line in (home_dir() / "testgate" / "config.path").read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and os.path.isabs(line):
+                return pathlib.Path(line)
+    except OSError:
+        pass
+    return home_dir() / "testgate.json"
 
 
 def load_config(path=None):
@@ -80,8 +100,12 @@ def decide(payload, config):
     # 새로 작성된 코멘트만 받는다. 수정이나 삭제는 분석을 다시 시작하면 안 된다.
     if event.get("kind") != "comment" or event.get("action") != "created":
         return None
-    # PR 대화 코멘트만 받는다.
-    if event.get("target") != "pull_request":
+    # 지원하는 위치는 PR 대화창이다. 이슈와 리뷰 코멘트는 안내만 하고, 번호가 없는 커밋 코멘트는 버린다.
+    target = event.get("target")
+    if target not in UNSUPPORTED_TARGETS and target != "pull_request":
+        return None
+    unsupported = None if target == "pull_request" else target
+    if unsupported and (not isinstance(event.get("number"), int) or isinstance(event.get("number"), bool)):
         return None
 
     author = event.get("author") or {}
@@ -100,6 +124,7 @@ def decide(payload, config):
 
     return {
         "deliveryId": payload.get("deliveryId"),
+        "unsupported": unsupported,
         "event": {
             "kind": event.get("kind"),
             "action": event.get("action"),
@@ -141,13 +166,13 @@ def parse_qa(body):
 
 
 def spool_dir():
-    """분석 요청을 저장하는 폴더. 설정 파일이 있는 폴더 아래의 testgate/requests 이다."""
-    return config_path().parent / "testgate" / "requests"
+    """분석 요청을 저장하는 폴더. 홈 폴더 아래의 testgate/requests 이다."""
+    return home_dir() / "testgate" / "requests"
 
 
 def launcher_path():
-    """분석 래퍼 경로. 설정 파일이 있는 폴더 아래의 testgate/testgate-run 이다."""
-    return config_path().parent / "testgate" / "testgate-run"
+    """분석 래퍼 경로. 홈 폴더 아래의 testgate/testgate-run 이다."""
+    return home_dir() / "testgate" / "testgate-run"
 
 
 def launch(delivery_id):
@@ -162,7 +187,7 @@ def launch(delivery_id):
     )
 
 
-def write_request(payload, parsed):
+def write_request(payload, parsed, unsupported=None):
     """통과한 요청을 파일로 저장한다. 에이전트 프롬프트에는 본문을 넣지 않고 이 파일로 전달한다.
 
     같은 delivery ID의 파일이 이미 있으면 덮어쓰지 않고 False를 돌려준다. 새로 저장하면 True이다.
@@ -175,10 +200,13 @@ def write_request(payload, parsed):
         "deliveryId": delivery_id,
         "repo": event["repo"].get("fullName"),
         "pr": event.get("number"),
-        "commit": parsed["commit"],
-        "text": parsed["text"],
+        "commit": None if unsupported else parsed["commit"],
+        # 안내만 하는 요청은 서술을 쓰지 않으므로 저장하지 않는다.
+        "text": "" if unsupported else parsed["text"],
         "truncated": parsed["truncated"],
-        "free": parsed["free"],
+        "free": False if unsupported else parsed["free"],
+        "unsupported": unsupported,
+        "author": (event.get("author") or {}).get("login"),
         "receivedAt": int(time.time()),
     }
     directory = spool_dir()
@@ -213,7 +241,7 @@ def main():
                 sys.stderr.write(f"분석 래퍼를 실행할 수 없다: {launcher_path()}")
                 sys.exit(1)
             try:
-                created = write_request(payload, result["qa"])
+                created = write_request(payload, result["qa"], result.get("unsupported"))
                 if created:
                     launch(payload["deliveryId"])
             except (ConfigError, OSError, KeyError, TypeError) as exc:

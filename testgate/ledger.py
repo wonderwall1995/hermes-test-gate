@@ -116,10 +116,20 @@ def fingerprint(scope, commit, block):
 
 
 def file_fingerprints(context):
-    """{경로: 지문}. diff 내용을 보지 못한 파일은 지문이 없고 이어받지 않는다."""
-    blocks = diffsource.blocks_by_path(context["diff"])
+    """{경로: 지문}. diff를 받지 못한 파일은 지문이 없고 이어받지 않는다.
+
+    예산 모듈(budget)이 줄이기 전의 전체 diff로 계산한 지문(fp)이 있으면 그것을 쓴다.
+    일부만 읽은 파일도 같은 내용이면 같은 지문이므로 이전 확인을 이어받을 수 있다.
+    """
+    blocks = None
     result = {}
     for f in context["files"]:
+        if "fp" in f:
+            if f["fp"]:
+                result[f["path"]] = f["fp"]
+            continue
+        if blocks is None:
+            blocks = diffsource.blocks_by_path(context["diff"])
         block = blocks.get(f["path"])
         if block is not None and f.get("diff_included", True):
             result[f["path"]] = fingerprint(context["scope"], context.get("commit"), block)

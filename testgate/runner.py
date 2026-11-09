@@ -68,5 +68,16 @@ class ClaudeRunner:
             "cost_usd": envelope.get("total_cost_usd"),
             "duration_ms": envelope.get("duration_ms"),
             "models": sorted((envelope.get("modelUsage") or {}).keys()),
+            "usage": _usage(envelope.get("usage")),
         }
         return output, meta
+
+
+USAGE_KEYS = ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
+
+
+def _usage(raw):
+    """토큰 사용량. 숫자인 항목만 남긴다 (출력이 입력보다 얼마나 큰지 재기 위한 기록)."""
+    if not isinstance(raw, dict):
+        return {}
+    return {k: raw[k] for k in USAGE_KEYS if isinstance(raw.get(k), int) and not isinstance(raw.get(k), bool)}

@@ -17,13 +17,30 @@ SCENARIO_SCHEMA = {
     },
 }
 
+CLAIM_STATUS_VALUES = ("in_diff", "not_in_diff", "unclear")
+MAX_CLAIMS = 20
+
+CLAIM_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["quote", "status", "files", "check", "expected"],
+    "properties": {
+        "quote": {"type": "string"},
+        "status": {"type": "string", "enum": list(CLAIM_STATUS_VALUES)},
+        "files": {"type": "array", "items": {"type": "string"}},
+        "check": {"type": "string"},
+        "expected": {"type": "string"},
+    },
+}
+
 OUTPUT_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["mode", "summary", "changes", "notes"],
+    "required": ["mode", "summary", "description_claims", "changes", "notes"],
     "properties": {
         "mode": {"type": "string", "enum": list(MODES)},
         "summary": {"type": "string"},
+        "description_claims": {"type": "array", "items": CLAIM_SCHEMA},
         "changes": {
             "type": "array",
             "items": {
@@ -111,18 +128,68 @@ def validate_shape(raw):
             "request": _text(item.get("request"), "request"),
             "scenarios": clean_scenarios[:20],
         })
+    claims = raw.get("description_claims", [])
+    if not isinstance(claims, list):
+        raise OutputError("description_claims가 목록이 아니다")
+    clean_claims = []
+    for item in claims[:MAX_CLAIMS * 2]:
+        if not isinstance(item, dict) or item.get("status") not in CLAIM_STATUS_VALUES or not isinstance(item.get("files"), list):
+            raise OutputError("description_claims 항목이 잘못되었다")
+        clean_claims.append({
+            "quote": _text(item.get("quote"), "claim.quote"),
+            "status": item["status"],
+            "files": [_text(f, "claim.file") for f in item["files"]][:50],
+            "check": _text(item.get("check"), "claim.check"),
+            "expected": _text(item.get("expected"), "claim.expected"),
+        })
     return {
         "mode": raw["mode"],
         "summary": _text(raw.get("summary"), "summary"),
+        "description_claims": clean_claims,
         "changes": clean_changes,
         "notes": _text(raw.get("notes"), "notes"),
     }
 
 
-def postprocess(output, files, qa_text):
+def budget_partial(info):
+    return info.get("coverage") == "partial"
+
+
+def verify_claims(claims, description, files):
+    """PR 설명에서 뽑은 주장을 코드가 다시 확인한다. (남긴 주장 목록, 메모 목록)을 돌려준다.
+
+    - 인용이 설명 원문에 없으면 버린다 (QA 서술의 근거 인용과 같은 규칙).
+    - 근거 파일은 이번에 읽은 파일 중에서만 인정한다. diff에서 확인됨인데 근거 파일이 없으면 판단 불가로 낮춘다.
+    - 같은 인용은 한 번만 쓰고, 설명이 비어 있으면 주장은 모두 버린다.
+    """
+    notes, kept, seen = [], [], set()
+    haystack = normalize_space(description or "")
+    known = set(files)
+    for claim in claims:
+        quote = normalize_space(claim["quote"])
+        if not haystack or not quote or quote not in haystack:
+            notes.append("PR 설명 원문에 없는 인용이라 설명 대조 항목을 제외했습니다.")
+            continue
+        if quote in seen:
+            continue
+        seen.add(quote)
+        claim = dict(claim, quote=quote, files=[f for f in dict.fromkeys(claim["files"]) if f in known])
+        if claim["status"] == "in_diff" and not claim["files"]:
+            notes.append("근거 파일이 없어 설명 대조 항목을 판단 불가로 낮췄습니다.")
+            claim["status"] = "unclear"
+        if claim["status"] == "not_in_diff":
+            claim["files"] = []
+        kept.append(claim)
+    return kept[:MAX_CLAIMS], notes
+
+
+def postprocess(output, files, qa_text, description=""):
     """검증된 출력에 코드 규칙을 적용한다. (결과, 코드가 추가한 메모 목록)을 반환한다."""
     notes = []
     result = dict(output)
+    result["description_claims"], claim_notes = verify_claims(
+        result.get("description_claims", []), description, [f["path"] for f in files])
+    notes += list(dict.fromkeys(claim_notes))
 
     # 서술이 비어 있으면 평가할 대상이 없으므로 설계서 모드로 고정한다.
     if not qa_text.strip() and result["mode"] != "design":
@@ -153,6 +220,9 @@ def postprocess(output, files, qa_text):
             if change["tested"] != "unclear":
                 notes.append(f"diff가 잘려 내용을 보지 못한 파일을 확인 불가로 처리했습니다: {path}")
             change["tested"] = "unclear"
+        if budget_partial(info) and change["tested"] == "yes":
+            notes.append(f"일부만 읽은 파일의 확인됨을 일부로 낮췄습니다: {path}")
+            change["tested"] = "partial"
         ordered.append(change)
     result["changes"] = ordered
 
@@ -174,6 +244,7 @@ def verdict(result):
     """판정을 코드로 계산한다."""
     if result["mode"] == "design":
         return "design"
-    if result["changes"] and all(c["tested"] == "yes" for c in result["changes"]):
+    relevant = [c for c in result["changes"] if c.get("coverage") != "excluded"]
+    if result["changes"] and all(c["tested"] == "yes" for c in relevant):
         return "sufficient"
     return "more_tests_needed"

@@ -5,7 +5,7 @@ import json
 import sys
 
 from testgate import analyze as analyze_mod
-from testgate import config, diffsource, knowledge, prompt, runner, schema
+from testgate import budget, config, diffsource, knowledge, prompt, runner, schema
 
 
 def build_parser():
@@ -50,12 +50,13 @@ def main(argv=None):
     commit = args.commit.lower() if args.commit else None
     request = {"deliveryId": "local", "repo": args.repo_name, "pr": args.pr, "commit": commit, "text": read_text(args)}
     try:
-        source = diffsource.LocalGitSource(args.repo, settings["max_diff_chars"])
+        source = diffsource.LocalGitSource(args.repo)
         context = source.get(args.base, args.head, commit=commit, title=args.title, body=args.body)
+        context = budget.apply(context, settings)
         kb = knowledge.DirectoryKnowledge(settings["knowledge_dirs"]) if settings["knowledge_dirs"] else knowledge.NullKnowledge()
         if args.dry_run:
             user_prompt = prompt.build_user_prompt(request, context, kb.load(context))
-            print(f"파일 {len(context['files'])}개, diff {len(context['diff'])}자, 프롬프트 {len(user_prompt)}자, 잘림={context['truncated']}")
+            print(f"파일 {len(context['files'])}개, 판독 범위 {context['coverage']}, diff {len(context['diff'])}자(예산 {context['diff_budget']}), 프롬프트 {len(user_prompt)}자")
             return 0
         claude = runner.ClaudeRunner(
             binary=settings["claude_binary"], model=args.model or settings["claude_model"],

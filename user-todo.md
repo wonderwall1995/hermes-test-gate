@@ -12,6 +12,12 @@
 
 ## 할 일
 
+[ ] 이유: 보고서 보관소는 github-app 브랜치(fix/report_storage)와 Cloudflare Worker 변경이 함께 배포되어야 하고, Cloudflare 로그인과 sudo 비밀번호는 사용자만 쓸 수 있습니다.
+    할일: github-app 에서 git push -u origin fix/report_storage 후 PR 을 병합하고, pnpm db:migrate, pnpm deploy:worker, pnpm svc:deploy 를 차례로 실행한 뒤 알려주세요. 그러면 제가 testgate.json 에서 upload_report 를 켜고 시험합니다.
+
+[ ] 이유: 큰 파일 알림과 E2 실험에는 Hermes 에 에이전트 없이 Discord 로 보내는 라우트(deliver_only)가 하나 더 필요하고, 라우트 생성과 서명 키 설정은 사용자 몫입니다.
+    할일: 단계 D 를 시작할 때 제가 라우트 생성 명령과 환경 변수 이름을 안내하므로, 그때 hermes webhook subscribe 로 testgate-notify 라우트를 만들고 키를 ~/.hermes/.env 에 넣어 주세요.
+
 [ ] 이유: 분석을 세션 LLM이 아니라 필터가 시작하도록 바꾼 뒤에는 실제 GitHub 코멘트가 한 건도 처리되지 않았고 mock 시험만 통과했으며, 실제 PR에 Bot 코멘트가 달리는 외부 게시라 사용자가 직접 시작해야 합니다.
     할일: 테스트 PR 에 1) /qa 로 시작하는 평가 코멘트, 2) 이어서 다른 파일을 서술한 /qa 코멘트, 3) /qa free: 로 시작하는 질문 코멘트를 차례로 쓰고, 코멘트마다 Bot 응답이 달리는지와 세션 이름의 순번(#1, #2)을 알려주세요.
 
@@ -23,6 +29,12 @@
 
 [ ] 이유: scripts/__pycache__/qa_filter.cpython-314.pyc 가 커밋에 들어 있어 변경 이력과 병합 충돌에 계속 끼어들고, 추적 해제는 저장소 이력을 바꾸는 커밋이라 사용자 승인이 필요합니다.
     할일: 추적 해제 커밋(git rm --cached)을 LLM이 만들어도 되는지 알려주세요. 만들면 푸시는 사용자가 합니다.
+
+[ ] 이유: 코멘트에서 Hermes 도착까지 12~22초가 걸리는 이유가 github-app이 20초마다 Worker를 확인하는 방식이고, 그 간격은 github-app의 .env 로만 바꿀 수 있습니다.
+    할일: github-app 의 .env 에서 WORKER_POLL_INTERVAL_MS 를 5000~10000(밀리초)으로 정하고 pnpm svc:restart 를 실행해 주세요. 먼저 Cloudflare 대시보드에서 Worker 요청 수와 무료 한도를 확인하세요 (5초 간격이면 하루 약 17,000건).
+
+[ ] 이유: Hermes가 TestGate 안내 문서(~/.hermes/testgate/README.md)를 실제로 찾아 읽고 정확히 답하는지는 Hermes 쪽에서 직접 물어봐야만 확인되며, 이전에는 프로젝트를 못 찾고 틀린 전제로 답했습니다.
+    할일: Discord 에서 Hermes 에게 "~/.hermes/testgate/README.md 를 읽고, 분석 비용을 누가 쓰는지와 Hermes 세션이 거부해도 분석이 되는 이유를 설명해봐"라고 묻고 답이 문서와 맞는지 알려주세요.
 
 ## 나중에 할 일
 
@@ -36,6 +48,18 @@
     할일: 설정이 안정되었다고 판단되면 백업과 mock 세션을 지워도 되는지 알려주세요. (급하지 않음)
 
 ## 완료
+
+[x] 이유: 수정한 코멘트에 넣은 @멘션이 알림을 보내는지는 사용자 계정의 알림함에서만 볼 수 있고, 안 보내면 결과가 나와도 알림이 없습니다 (E1 실험).
+    할일: 테스트 PR 에 /qa 코멘트를 쓰고, 결과가 확인 코멘트로 바뀐 뒤 GitHub 알림(웹 알림이나 메일)이 오는지 알려주세요. 오지 않으면 ~/.hermes/testgate.json 의 analysis 에 "notify_with_new_comment": true 를 추가하면 됩니다. (결과: 멘션이 붙었고 수정 시점에 GitHub 알림이 도착함, 추가 알림 코멘트 불필요, 사용자 확인 2026-11-09)
+
+[x] 이유: "context missing"(diff 상한 때문에 PR #1의 파일 13개를 못 봄) 보완 작업은 기존 main 과 분리된 브랜치에서 해야 합니다.
+    할일: fix/context-missing 브랜치를 만들고 보완 방향을 정해 주세요. (결과: 브랜치 생성, 설계서 모드 유지 + 제약, 코드 중개 + Discord 알림, 4단계 계획 승인, 2026-11-09)
+
+[x] 이유: Hermes 수신부에서만 보이는 관찰(세션 LLM 거부 등)은 LLM 이 직접 볼 수 없습니다.
+    할일: Hermes 의 DeepSeek 으로 편지(Hermes-11.09-letter.md)를 쓰게 하고 대조를 요청해 주세요. (결과: 편지와 대조 완료, 새로 필요한 작업은 없었고 기록은 llms-todo.md 에 반영, 2026-11-09)
+
+[x] 이유: 0단계(조용한 실패 수정)는 저장소 이력을 바꾸는 커밋이라 사용자가 확인한 뒤 해야 합니다.
+    할일: 0단계 변경을 검토하고 직접 커밋해 주세요. (결과: 사용자가 검토 후 커밋하기로 결정, 11.09-session.md 와 Hermes-11.09-letter.md 는 커밋 제외)
 
 [x] 이유: 분석 요청을 허용할 계정을 필터 스크립트에 적으려면 GitHub 로그인 ID가 필요합니다.
     할일: /qa 코멘트를 쓸 본인 GitHub 로그인 ID를 채팅으로 알려주세요. (결과: <GitHub 계정>)

@@ -6,7 +6,7 @@
 ## 사전 조건
 
 - Hermes 게이트웨이가 실행 중입니다 (`pnpm gateway:status`가 `{"status": "ok", ...}`를 출력).
-- 설치와 설정을 마쳤습니다 (`docs/setup.md`). 특히 `$HERMES_HOME/testgate.json`과 필터 설치가 필요합니다.
+- 설치와 설정을 마쳤습니다 (`docs/setup.md`). 특히 저장소의 `testgate.json`과 필터 설치가 필요합니다.
 - 라우트 `github-app`이 `$HERMES_HOME/webhook_subscriptions.json`에 있습니다. mock 도구는 서명 키를 여기서 읽습니다. 키를 출력하거나 공유하지 않습니다.
 
 ## 1단계: Hermes 단독 확인 (github-app 없이)
@@ -29,9 +29,10 @@ pnpm filter:test  # 코멘트 문법 단위 테스트
 ```
 
 `/qa` 케이스(모두 에이전트를 시작합니다): `mock:qa`, `mock:qa-commit`(`[커밋ID]` 포함), `mock:qa-multiline`(여러 줄), `mock:qa-design`(문서 요청 서술), `mock:qa-empty`(서술 없음), `mock:qa-free`(`/qa free:` 자유 대화), `mock:qa-free-commit`(`/qa free: [커밋ID]`).
+지원하지 않는 위치의 `/qa`: `mock:qa-issue`(이슈 코멘트), `mock:qa-review`(코드 줄 리뷰 코멘트). 분석 없이 안내 코멘트만 시험하며, `MOCK_REPO`와 `MOCK_PR`이 실제 PR이면 안내가 실제로 게시됩니다.
 실제 PR을 가리키면 Bot 코멘트가 게시됩니다 (`MOCK_REPO`, `MOCK_PR`).
 
-개별 실행: `pnpm mock:plain`, `pnpm mock:other-author`, `pnpm mock:edited`, `pnpm mock:issue`, `pnpm mock:bad-signature`.
+개별 실행: `pnpm mock:plain`, `pnpm mock:other-author`, `pnpm mock:edited`, `pnpm mock:issue`(이슈의 일반 코멘트라 무시됨), `pnpm mock:bad-signature`.
 상태 확인: `pnpm gateway:status`. 필터를 고친 뒤에는 `pnpm filter:install`로 설치본을 갱신합니다.
 pnpm 없이 쓰려면 `scripts/mock_post.sh <케이스>`와 `MOCK_DRY_RUN=1 scripts/mock_post.sh <케이스>`를 직접 실행합니다.
 
@@ -61,4 +62,4 @@ pnpm 없이 쓰려면 `scripts/mock_post.sh <케이스>`와 `MOCK_DRY_RUN=1 scri
 - 401: `.env`의 `HTTP_SINK_SECRET`이 라우트의 secret과 다릅니다.
 - 아무 로그도 없음: `HTTP_SINK_URL`이 비어 있거나 github-app 재시작을 하지 않았습니다.
 - `script ignored`가 `/qa` 코멘트에도 나옴: 코멘트 작성자나 레포 소유자가 `testgate.json`의 허용 목록에 없거나, PR이 아닌 이슈에 쓴 코멘트입니다.
-- 로그에 `설정 파일을 읽을 수 없다`가 나옴: `$HERMES_HOME/testgate.json`이 없거나 형식이 잘못되었습니다 (fail closed).
+- 로그에 `설정 파일을 읽을 수 없다`가 나옴: 저장소의 `testgate.json`(경로는 `$HERMES_HOME/testgate/config.path`에 있음)이 없거나 형식이 잘못되었습니다 (fail closed).
