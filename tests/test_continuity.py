@@ -264,7 +264,7 @@ class AnalyzeContinuityTest(ClaudeMixin, unittest.TestCase):
         claude2 = self.make_claude([design])
         second = analyze.analyze(self.request("문서 뽑아줘"), ctx, knowledge.NullKnowledge(), claude2, history=[entry], name="[PR2 #2]")
         self.assertEqual(second["mode"], "design")
-        self.assertIn("이전 요청 `[PR2 #1]`에서 확인되어 새 시나리오를 만들지 않았습니다", second["markdown"])
+        self.assertIn("이전 요청 `[PR2 #1]`에서 확인됨", second["markdown"])
 
 
 class FreeModeAnalyzeTest(ClaudeMixin, unittest.TestCase):
@@ -350,8 +350,8 @@ class RunContinuityTest(Base):
         self.assertEqual(renames[0][-1], "[PR3 - T #2]")
         history_block = self.calls()[1]["stdin"].split("name=history")[1].split("<<<END")[0]
         self.assertIn("a 해 주세요", history_block)
-        posts = [p for path, p in FakeApp.log if path == "/api/comment"]
-        self.assertEqual([p["deliveryId"] for p in posts], ["d-1", "d-2"])
+        posts = test_run.final_comments()
+        self.assertEqual(len(posts), 2)
         self.assertTrue(posts[1]["body"].rstrip().endswith("세션: `[PR3 - T #2]`"))
 
     def test_verified_file_is_carried_to_the_next_comment_without_calling_claude(self):
@@ -363,7 +363,7 @@ class RunContinuityTest(Base):
         second, _ = self.execute("d-2")
         self.assertEqual(len(self.calls()), calls_after_first)
         self.assertEqual((second["result"], second["verdict"]), ("ok", "sufficient"))
-        body = [p for path, p in FakeApp.log if path == "/api/comment"][1]["body"]
+        body = test_run.final_comments()[1]["body"]
         self.assertIn("이전 요청 `[PR3 - T #1]`에서 확인됨", body)
 
     def test_changed_pr_title_is_used_by_later_sessions_only(self):
@@ -383,7 +383,7 @@ class RunContinuityTest(Base):
         self.spool("d-1", text="이 PR이 뭘 하는 거야?", free=True)
         free, _ = self.execute("d-1")
         self.assertEqual((free["result"], free["mode"], free["verdict"]), ("ok", "free", "-"))
-        body = [p for path, p in FakeApp.log if path == "/api/comment"][0]["body"]
+        body = test_run.final_comments()[0]["body"]
         self.assertTrue(body.startswith("이 PR은 로그인 잠금을 추가합니다."))
         self.assertNotIn("## 변경별", body)
         self.assertNotIn("diff --git", self.calls()[0]["stdin"])
@@ -402,7 +402,7 @@ class RunContinuityTest(Base):
         summary, _ = self.execute("d-1")
         self.assertEqual((summary["result"], summary["mode"]), ("ok", "free"))
         self.assertEqual(self.calls(), [])
-        body = [p for path, p in FakeApp.log if path == "/api/comment"][0]["body"]
+        body = test_run.final_comments()[0]["body"]
         self.assertIn("/qa free: 질문", body)
 
     def test_organization_owner_works(self):
@@ -424,8 +424,8 @@ class RunContinuityTest(Base):
         self.assertEqual(ledger.done_entries(self.home, "alice/r", 3), [])
         data = ledger.load(ledger.thread_path(self.home, "alice/r", 3), "alice/r", 3)
         self.assertEqual(data["entries"][0]["status"], "failed")
-        self.assertEqual([p["deliveryId"] for path, p in FakeApp.log if path == "/api/comment"], ["d-1-failed"])
-        self.assertIn("#1", [p["body"] for path, p in FakeApp.log if path == "/api/comment"][0])
+        self.assertEqual(len(test_run.final_comments()), 1)
+        self.assertIn("#1", test_run.final_comments()[0]["body"])
 
 
 if __name__ == "__main__":

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Hermes 웹훅 라우트에 가짜 github-app 요청을 보낸다.
 # 사용법: scripts/mock_post.sh <케이스>
-# 케이스: qa | qa-commit | qa-multiline | qa-design | qa-empty | qa-free | qa-free-commit | plain | other-author | edited | issue | bad-signature
+# 케이스: qa | qa-commit | qa-multiline | qa-design | qa-empty | qa-free | qa-free-commit | qa-issue | qa-review | plain | other-author | edited | issue | bad-signature
 # MOCK_DRY_RUN=1 이면 요청을 보내지 않고 필터 스크립트(scripts/qa_filter.py)의 결과만 출력한다. 에이전트를 실행하지 않는다.
 # HERMES_HOME 기본값은 ~/.hermes 이다 (Docker 이미지는 /opt/data).
 # 서명 키는 $HERMES_HOME/webhook_subscriptions.json 의 라우트 설정에서 읽는다. 키를 화면에 출력하지 않는다.
-# 작성자와 레포 소유자는 $HERMES_HOME/testgate.json 의 첫 번째 허용 계정을 쓴다 (MOCK_AUTHOR, MOCK_OWNER 로 바꿀 수 있다).
+# 작성자와 레포 소유자는 저장소의 testgate.json 의 첫 번째 허용 계정을 쓴다 (MOCK_AUTHOR, MOCK_OWNER 로 바꿀 수 있다).
 # 가짜 PR 번호와 레포 이름은 MOCK_PR(기본 1), MOCK_REPO(기본 hermes-test-gate) 로 바꾼다. 실제 PR 을 가리키면 분석이 실제로 실행되고 코멘트가 게시될 수 있다.
 set -euo pipefail
 
@@ -13,8 +13,9 @@ CASE="${1:-}"
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 URL="${MOCK_URL:-http://127.0.0.1:8644/webhooks/github-app}"
 SUBS_FILE="${MOCK_SUBS_FILE:-$HERMES_HOME/webhook_subscriptions.json}"
-CONFIG_FILE="${TESTGATE_CONFIG:-$HERMES_HOME/testgate.json}"
-export TESTGATE_CONFIG="$CONFIG_FILE"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+CONFIG_FILE="${TESTGATE_CONFIG:-$REPO_ROOT/testgate.json}"
+export HERMES_HOME TESTGATE_CONFIG="$CONFIG_FILE"
 ROUTE="${MOCK_ROUTE:-github-app}"
 SECRET="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))[sys.argv[2]]["secret"])' "$SUBS_FILE" "$ROUTE" 2>/dev/null)" \
   || { echo "라우트 '$ROUTE'의 secret을 읽을 수 없다: $SUBS_FILE" >&2; exit 2; }
@@ -37,7 +38,11 @@ case "$CASE" in
   plain) BODY_TEXT="looks good to me" ;;
   other-author) AUTHOR="someone-else" ;;
   edited) ACTION="edited" ;;
-  issue) TARGET="issue" ;;
+  # issue: 이슈에 쓴 일반 코멘트(/qa 아님)라서 무시된다. 안전 묶음(mock:safe)에 들어 있다.
+  issue) TARGET="issue"; BODY_TEXT="looks good to me" ;;
+  # qa-issue, qa-review: 지원하지 않는 위치의 /qa 라서 안내 코멘트가 게시될 수 있다 (MOCK_REPO, MOCK_PR 이 실제 PR 이면 실제로 게시된다).
+  qa-issue) TARGET="issue"; BODY_TEXT="/qa 이슈에서 써 봄" ;;
+  qa-review) TARGET="pull_request_review"; BODY_TEXT="/qa 코드 줄에서 써 봄" ;;
   bad-signature) ;;
   *) echo "알 수 없는 케이스: '$CASE'" >&2; exit 2 ;;
 esac

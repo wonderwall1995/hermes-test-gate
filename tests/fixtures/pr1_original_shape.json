@@ -1,0 +1,355 @@
+{
+ "note": "cypress-realworld-for-portfolio PR #1 의 2026-11-09 08:14 시점 모양. 파일 이름은 PR 기록에서, 큰 12개 파일의 diff 길이는 GitHub 공개 API 측정값, 나머지 38개는 합계(153,454자)에 맞춰 균등 배분한 근사치. 코드 내용은 없음.",
+ "files": [
+  {
+   "path": ".dockerignore",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 901
+  },
+  {
+   "path": ".env.example",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 901
+  },
+  {
+   "path": "Dockerfile",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 901
+  },
+  {
+   "path": "LLMS.md",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 901
+  },
+  {
+   "path": "README.md",
+   "status": "modified",
+   "additions": 72,
+   "deletions": 36,
+   "patch_chars": 4379
+  },
+  {
+   "path": "docker-compose.yml",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 901
+  },
+  {
+   "path": "package.json",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 901
+  },
+  {
+   "path": "playwright.config.ts",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 901
+  },
+  {
+   "path": "pnpm-lock.yaml",
+   "status": "modified",
+   "additions": 596,
+   "deletions": 298,
+   "patch_chars": 35784
+  },
+  {
+   "path": "prisma/migrations/20261108224914_init/migration.sql",
+   "status": "added",
+   "additions": 84,
+   "deletions": 0,
+   "patch_chars": 5054
+  },
+  {
+   "path": "prisma/migrations/migration_lock.toml",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 901
+  },
+  {
+   "path": "prisma/schema.prisma",
+   "status": "added",
+   "additions": 53,
+   "deletions": 0,
+   "patch_chars": 3224
+  },
+  {
+   "path": "scripts/generateTestIdList.ts",
+   "status": "added",
+   "additions": 428,
+   "deletions": 0,
+   "patch_chars": 25735
+  },
+  {
+   "path": "scripts/mock-aws-exports-es5.js",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 901
+  },
+  {
+   "path": "scripts/mock-aws-exports.js",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  },
+  {
+   "path": "src/components/AlertBar.tsx",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  },
+  {
+   "path": "src/components/BankAccountForm.tsx",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  },
+  {
+   "path": "src/components/BankAccountItem.tsx",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  },
+  {
+   "path": "src/components/BankAccountList.tsx",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  },
+  {
+   "path": "src/components/CommentForm.tsx",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  },
+  {
+   "path": "src/components/CommentList.tsx",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  },
+  {
+   "path": "src/components/CommentListItem.tsx",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  },
+  {
+   "path": "src/components/EmptyList.tsx",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  },
+  {
+   "path": "src/components/MainLayout.tsx",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  },
+  {
+   "path": "src/components/NavBar.tsx",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  },
+  {
+   "path": "src/components/NavDrawer.tsx",
+   "status": "modified",
+   "additions": 72,
+   "deletions": 36,
+   "patch_chars": 4334
+  },
+  {
+   "path": "src/components/NotificationList.tsx",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  },
+  {
+   "path": "src/components/NotificationListItem.tsx",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  },
+  {
+   "path": "src/components/SignInForm.tsx",
+   "status": "modified",
+   "additions": 45,
+   "deletions": 22,
+   "patch_chars": 2704
+  },
+  {
+   "path": "src/components/SignUpForm.tsx",
+   "status": "modified",
+   "additions": 53,
+   "deletions": 26,
+   "patch_chars": 3188
+  },
+  {
+   "path": "src/components/SkeletonList.tsx",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  },
+  {
+   "path": "src/components/TransactionAmount.tsx",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  },
+  {
+   "path": "src/components/TransactionCreateStepThree.tsx",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  },
+  {
+   "path": "src/components/TransactionCreateStepTwo.tsx",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  },
+  {
+   "path": "src/components/TransactionDateRangeFilter.tsx",
+   "status": "modified",
+   "additions": 50,
+   "deletions": 25,
+   "patch_chars": 3042
+  },
+  {
+   "path": "src/components/TransactionDetail.tsx",
+   "status": "modified",
+   "additions": 57,
+   "deletions": 28,
+   "patch_chars": 3433
+  },
+  {
+   "path": "src/components/TransactionInfiniteList.tsx",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  },
+  {
+   "path": "src/components/TransactionItem.tsx",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  },
+  {
+   "path": "src/components/TransactionList.tsx",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  },
+  {
+   "path": "src/components/TransactionListAmountRangeFilter.tsx",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  },
+  {
+   "path": "src/components/TransactionNavTabs.tsx",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  },
+  {
+   "path": "src/components/TransactionTitle.tsx",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  },
+  {
+   "path": "src/components/UserListItem.tsx",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  },
+  {
+   "path": "src/components/UserListSearchForm.tsx",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  },
+  {
+   "path": "src/components/UserSettingsForm.tsx",
+   "status": "modified",
+   "additions": 53,
+   "deletions": 26,
+   "patch_chars": 3212
+  },
+  {
+   "path": "src/components/UsersList.tsx",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  },
+  {
+   "path": "src/containers/BankAccountsContainer.tsx",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  },
+  {
+   "path": "src/containers/UserOnboardingContainer.tsx",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  },
+  {
+   "path": "testid-listup.md",
+   "status": "added",
+   "additions": 419,
+   "deletions": 0,
+   "patch_chars": 25156
+  },
+  {
+   "path": "vite.config.ts",
+   "status": "modified",
+   "additions": 15,
+   "deletions": 7,
+   "patch_chars": 900
+  }
+ ]
+}

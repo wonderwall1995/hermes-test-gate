@@ -134,8 +134,43 @@ class FilterTest(unittest.TestCase):
         for action in ("edited", "deleted"):
             self.assertIsNone(qa("/qa x", action=action), action)
 
-    def test_issue_comment_is_dropped(self):
-        self.assertIsNone(qa("/qa x", target="issue"))
+    def test_supported_location_has_no_unsupported_flag(self):
+        self.assertIsNone(qa_filter.decide(make_payload("/qa x"), CONFIG)["unsupported"])
+
+
+class UnsupportedLocationTest(unittest.TestCase):
+    """이슈와 코드 줄 리뷰 코멘트의 /qa 는 분석하지 않고 안내만 한다."""
+
+    def decide(self, body="/qa x", **overrides):
+        return qa_filter.decide(make_payload(body, **overrides), CONFIG)
+
+    def test_issue_and_review_comments_are_marked_unsupported(self):
+        for target in ("issue", "pull_request_review"):
+            result = self.decide(target=target)
+            self.assertIsNotNone(result, target)
+            self.assertEqual(result["unsupported"], target)
+            self.assertEqual(result["event"]["number"], 3)
+
+    def test_commit_comments_are_dropped_because_there_is_no_number_to_answer_on(self):
+        self.assertIsNone(self.decide(target="commit"))
+        self.assertIsNone(self.decide(target="commit", number=None))
+
+    def test_missing_or_invalid_number_is_dropped(self):
+        for number in (None, "3", True, 3.5):
+            self.assertIsNone(self.decide(target="issue", number=number), repr(number))
+
+    def test_strangers_get_no_guidance(self):
+        self.assertIsNone(self.decide(target="issue", author={"login": "mallory", "type": "User"}))
+        self.assertIsNone(self.decide(target="pull_request_review", author={"login": "alice", "type": "Bot"}))
+        self.assertIsNone(self.decide(target="issue", repo={"owner": "other", "name": "r", "fullName": "other/r"}))
+
+    def test_only_qa_commands_get_guidance(self):
+        for body in ("그냥 코멘트", "/qatest x", "앞에 글 /qa x"):
+            self.assertIsNone(self.decide(body, target="issue"), body)
+
+    def test_edited_or_deleted_unsupported_comments_are_dropped(self):
+        for action in ("edited", "deleted"):
+            self.assertIsNone(self.decide(target="issue", action=action), action)
 
     def test_non_comment_event_is_dropped(self):
         self.assertIsNone(qa("/qa x", kind="push"))

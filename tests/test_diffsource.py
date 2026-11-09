@@ -49,15 +49,17 @@ class LocalGitSourceTest(unittest.TestCase):
         self.assertEqual([f["path"] for f in ctx["files"]], ["a.txt"])
         self.assertNotIn("+new", ctx["diff"])
 
-    def test_diff_limit_marks_omitted_files(self):
+    def test_source_is_unlimited_and_budget_marks_omitted_files(self):
+        from testgate import budget
         full = diffsource.LocalGitSource(self.repo).get("main", "feature")
+        self.assertFalse(full["truncated"])
         first_block = diffsource.split_diff_by_file(full["diff"])[0]
         # 첫 블록은 들어가고 둘째 블록은 들어가지 않는 상한
-        ctx = diffsource.LocalGitSource(self.repo, max_diff_chars=len(first_block) + 1).get("main", "feature")
+        ctx = budget.apply(full, {"max_diff_chars": len(first_block) + 1})
         self.assertTrue(ctx["truncated"])
-        flags = {f["path"]: f["diff_included"] for f in ctx["files"]}
-        self.assertTrue(flags["a.txt"])
-        self.assertFalse(flags["c.txt"])
+        by = {f["path"]: f for f in ctx["files"]}
+        self.assertEqual((by["a.txt"]["coverage"], by["a.txt"]["diff_included"]), ("full", True))
+        self.assertEqual((by["c.txt"]["coverage"], by["c.txt"]["reason"]), ("unseen", "budget"))
 
     def test_bad_refs_are_rejected(self):
         src = diffsource.LocalGitSource(self.repo)

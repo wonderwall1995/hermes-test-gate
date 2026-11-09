@@ -8,7 +8,7 @@ PR 정보와 diff는 github-app의 `/api/pr`에서 가져오고(개발과 시험
 ```
 Hermes 웹훅 수신 -> 라우트 필터(scripts/qa_filter.py): 허용 계정의 /qa 코멘트만 통과
                     요청을 requests/<deliveryId>.json 으로 저장, 래퍼를 백그라운드로 시작
-Hermes 세션      -> 요청의 기록으로만 남음 (LLM은 OK만 답함, 도구 없음)
+Hermes 세션      -> 요청의 기록으로만 남음 (LLM은 OK만 답함, terminal과 파일 도구 없음)
 래퍼(testgate run <deliveryId>, 별도 프로세스)
                  -> 요청 재검증 -> github-app /api/pr 로 PR 맥락 조회 -> (이어받기 판단) -> Claude 분석
                  -> 보고서 저장 -> github-app /api/comment 로 게시 -> 상태 DB에서 세션을 찾아 이름 변경
@@ -16,11 +16,18 @@ Hermes 세션      -> 요청의 기록으로만 남음 (LLM은 OK만 답함, 도
 
 ## 원칙
 
-1. Hermes 세션의 LLM은 분석에 관여하지 않습니다. 필터가 통과 판정 후 래퍼를 백그라운드로 시작하고, 본문은 파일(`requests/`)로만 전달됩니다. 세션에는 도구를 주지 않고 요청의 기록으로만 남깁니다 (LLM이 자동화 요청을 보안상 거부해 분석이 조용히 사라진 적이 있어서).
+1. Hermes 세션의 LLM은 분석에 관여하지 않습니다. 필터가 통과 판정 후 래퍼를 백그라운드로 시작하고, 본문은 파일(`requests/`)로만 전달됩니다. 세션에는 `terminal`과 파일 도구가 없고(웹훅 기본 묶음의 웹 조회와 `clarify`는 남아 있으나 쓰이지 않음) 요청의 기록으로만 남깁니다 (LLM이 자동화 요청을 보안상 거부해 분석이 조용히 사라진 적이 있어서).
 2. Claude Code는 도구 없이 실행합니다 (`--tools ""`). 읽을 파일도 실행할 명령도 없습니다. 입력은 프롬프트의 데이터뿐입니다.
 3. 입력은 모두 비신뢰 데이터입니다 (QA 서술, PR 설명, diff, 지식 문서). 구분자는 요청마다 새로 만든 난수를 씁니다.
 4. Claude의 출력은 JSON 스키마로 받고, 코드가 다시 검증하고, 마크다운은 코드가 만듭니다. 모델의 형식 지시 준수에 의존하지 않습니다.
 5. 근거 인용은 QA 서술에 실제로 있는 문장이어야 합니다. 없으면 "확인 불가"로 낮춥니다.
+
+## 실패하지 않게 하는 장치
+
+분석은 사용자가 보지 못하는 백그라운드 프로세스에서 돌기 때문에, 실패가 조용히 사라지지 않게 막습니다.
+- 래퍼는 예상 밖 예외까지 잡아서 일반 문구의 실패 코멘트(`<deliveryId>-failed`)를 게시하고, PR 기록을 `failed`로 마무리하고, 상세를 로그에 남깁니다. 보고서 파일 저장이 실패해도 결과는 코멘트로 전달합니다.
+- 필터가 띄우는 래퍼 실행 파일(`testgate-run`)이 출력과 오류를 `$HERMES_HOME/logs/testgate.log`로 보냅니다. 실행 파일이 깨졌거나 가져오기 오류가 나도 로그에 남습니다.
+- 지원하지 않는 위치(이슈, 코드 줄 리뷰 코멘트)의 `/qa`에는 분석 없이 안내만 답합니다. 커밋 코멘트는 번호가 없어 답하지 못하고 무시합니다.
 
 ## 코멘트 문법
 
@@ -81,15 +88,17 @@ PR 맥락 (github-app `/api/pr` 응답을 `githubapp.py`가 변환):
 `{"title", "body", "base_ref", "head_sha", "scope": "pr" 또는 "commit", "commit", "files": [{"path","status","additions","deletions","diff_included"}], "diff", "truncated"}`
 
 Claude 출력 (스키마):
-`mode`(evaluate 또는 design), `summary`, `changes[]`(path, change_summary, tested[yes|partial|no|unclear], evidence_quote, request, scenarios[]), `notes`
+`mode`(evaluate 또는 design), `summary`, `description_claims[]`(quote, status[in_diff|not_in_diff|unclear], files, check, expected), `changes[]`(path, change_summary, tested[yes|partial|no|unclear], evidence_quote, request, scenarios[]), `notes`
 
 ## 코드가 덮어쓰는 규칙
 
 - 서술이 비어 있으면 mode는 항상 design입니다.
 - 변경 파일 목록과 `changes[].path`가 일치해야 합니다. 빠진 파일은 `unclear`로 보충하고, 목록에 없는 경로는 버립니다.
 - `tested`가 yes 또는 partial인데 `evidence_quote`가 서술에 없으면 `unclear`로 낮춥니다.
-- diff가 잘려서 내용을 못 본 파일은 `unclear`입니다.
-- 판정은 코드가 계산합니다: 모든 변경이 yes이면 "충족", 아니면 "추가 테스트 필요".
+- diff를 읽지 못한 파일(미확인)은 모델 판단 없이 코드가 `unclear`로 만들고 시나리오를 넣지 않습니다. 제외 규칙에 해당하는 파일(`excluded`)은 읽지도 판정하지도 않고, 일부만 읽은 파일(`partial`)은 `yes`가 될 수 없습니다.
+- 판독 범위(`full`, `partial`, `excluded`, `unseen`)는 `testgate/budget.py`가 정합니다. 우선순위는 일반 소스, 문서 순이고 생성물은 제외합니다.
+- `description_claims`의 인용이 PR 설명 원문에 없으면 버리고(공백 차이는 허용), `in_diff`인데 읽은 파일 중 근거 파일이 없으면 `unclear`로 낮춥니다. 주장은 최대 20개입니다.
+- 판정은 코드가 계산합니다: 제외된 파일을 뺀 모든 변경이 yes이면 "충족", 아니면 "추가 테스트 필요".
 
 ## 확장: 도메인 지식 문서
 

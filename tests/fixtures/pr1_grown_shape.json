@@ -1,0 +1,705 @@
+{
+ "note": "같은 PR #1 의 2026-11-09 11시 이후 실측(GitHub 공개 API, 처음 100개 파일). 파일 이름, 상태, 변경 줄 수, diff 길이만 있고 코드 내용은 없음.",
+ "files": [
+  {
+   "path": ".dockerignore",
+   "status": "added",
+   "additions": 8,
+   "deletions": 0,
+   "patch_chars": 98
+  },
+  {
+   "path": ".env.example",
+   "status": "modified",
+   "additions": 9,
+   "deletions": 2,
+   "patch_chars": 694
+  },
+  {
+   "path": ".prettierignore",
+   "status": "modified",
+   "additions": 0,
+   "deletions": 1,
+   "patch_chars": 103
+  },
+  {
+   "path": "Dockerfile",
+   "status": "added",
+   "additions": 19,
+   "deletions": 0,
+   "patch_chars": 545
+  },
+  {
+   "path": "LLMS.md",
+   "status": "modified",
+   "additions": 31,
+   "deletions": 3,
+   "patch_chars": 2622
+  },
+  {
+   "path": "README.md",
+   "status": "modified",
+   "additions": 37,
+   "deletions": 31,
+   "patch_chars": 7706
+  },
+  {
+   "path": "backend/app.ts",
+   "status": "modified",
+   "additions": 9,
+   "deletions": 0,
+   "patch_chars": 941
+  },
+  {
+   "path": "backend/async-handler.ts",
+   "status": "added",
+   "additions": 11,
+   "deletions": 0,
+   "patch_chars": 483
+  },
+  {
+   "path": "backend/auth.ts",
+   "status": "modified",
+   "additions": 22,
+   "deletions": 15,
+   "patch_chars": 1875
+  },
+  {
+   "path": "backend/bankaccount-db.ts",
+   "status": "added",
+   "additions": 38,
+   "deletions": 0,
+   "patch_chars": 1284
+  },
+  {
+   "path": "backend/bankaccount-routes.ts",
+   "status": "modified",
+   "additions": 41,
+   "deletions": 22,
+   "patch_chars": 2683
+  },
+  {
+   "path": "backend/banktransfer-db.ts",
+   "status": "added",
+   "additions": 184,
+   "deletions": 0,
+   "patch_chars": 6089
+  },
+  {
+   "path": "backend/banktransfer-routes.ts",
+   "status": "modified",
+   "additions": 53,
+   "deletions": 8,
+   "patch_chars": 2174
+  },
+  {
+   "path": "backend/banktransfer-service.ts",
+   "status": "added",
+   "additions": 82,
+   "deletions": 0,
+   "patch_chars": 3460
+  },
+  {
+   "path": "backend/comment-db.ts",
+   "status": "added",
+   "additions": 38,
+   "deletions": 0,
+   "patch_chars": 1164
+  },
+  {
+   "path": "backend/comment-routes.ts",
+   "status": "modified",
+   "additions": 9,
+   "deletions": 7,
+   "patch_chars": 1471
+  },
+  {
+   "path": "backend/contact-db.ts",
+   "status": "added",
+   "additions": 37,
+   "deletions": 0,
+   "patch_chars": 1555
+  },
+  {
+   "path": "backend/contact-routes.ts",
+   "status": "modified",
+   "additions": 17,
+   "deletions": 13,
+   "patch_chars": 1854
+  },
+  {
+   "path": "backend/database.ts",
+   "status": "removed",
+   "additions": 0,
+   "deletions": 859,
+   "patch_chars": 26436
+  },
+  {
+   "path": "backend/graphql/resolvers/Mutation.ts",
+   "status": "modified",
+   "additions": 3,
+   "deletions": 3,
+   "patch_chars": 565
+  },
+  {
+   "path": "backend/graphql/resolvers/Query.ts",
+   "status": "modified",
+   "additions": 3,
+   "deletions": 3,
+   "patch_chars": 517
+  },
+  {
+   "path": "backend/http-error.ts",
+   "status": "added",
+   "additions": 9,
+   "deletions": 0,
+   "patch_chars": 255
+  },
+  {
+   "path": "backend/like-db.ts",
+   "status": "added",
+   "additions": 26,
+   "deletions": 0,
+   "patch_chars": 1040
+  },
+  {
+   "path": "backend/like-routes.ts",
+   "status": "modified",
+   "additions": 9,
+   "deletions": 7,
+   "patch_chars": 1337
+  },
+  {
+   "path": "backend/notification-api.ts",
+   "status": "added",
+   "additions": 75,
+   "deletions": 0,
+   "patch_chars": 3217
+  },
+  {
+   "path": "backend/notification-db.ts",
+   "status": "added",
+   "additions": 147,
+   "deletions": 0,
+   "patch_chars": 5064
+  },
+  {
+   "path": "backend/notification-routes.ts",
+   "status": "modified",
+   "additions": 19,
+   "deletions": 17,
+   "patch_chars": 2163
+  },
+  {
+   "path": "backend/prisma.ts",
+   "status": "added",
+   "additions": 16,
+   "deletions": 0,
+   "patch_chars": 679
+  },
+  {
+   "path": "backend/social-db.ts",
+   "status": "added",
+   "additions": 59,
+   "deletions": 0,
+   "patch_chars": 2432
+  },
+  {
+   "path": "backend/testdata-db.ts",
+   "status": "added",
+   "additions": 28,
+   "deletions": 0,
+   "patch_chars": 1233
+  },
+  {
+   "path": "backend/testdata-routes.ts",
+   "status": "modified",
+   "additions": 29,
+   "deletions": 13,
+   "patch_chars": 1577
+  },
+  {
+   "path": "backend/transaction-db.ts",
+   "status": "added",
+   "additions": 447,
+   "deletions": 0,
+   "patch_chars": 17152
+  },
+  {
+   "path": "backend/transaction-routes.ts",
+   "status": "modified",
+   "additions": 21,
+   "deletions": 20,
+   "patch_chars": 4025
+  },
+  {
+   "path": "backend/user-db.ts",
+   "status": "added",
+   "additions": 106,
+   "deletions": 0,
+   "patch_chars": 3766
+  },
+  {
+   "path": "backend/user-routes.ts",
+   "status": "modified",
+   "additions": 48,
+   "deletions": 30,
+   "patch_chars": 3345
+  },
+  {
+   "path": "backend/validators.ts",
+   "status": "modified",
+   "additions": 7,
+   "deletions": 0,
+   "patch_chars": 507
+  },
+  {
+   "path": "data/database-seed.json",
+   "status": "removed",
+   "additions": 0,
+   "deletions": 10989,
+   "patch_chars": 0
+  },
+  {
+   "path": "data/database.json",
+   "status": "removed",
+   "additions": 0,
+   "deletions": 10989,
+   "patch_chars": 0
+  },
+  {
+   "path": "data/empty-seed.json",
+   "status": "removed",
+   "additions": 0,
+   "deletions": 10,
+   "patch_chars": 185
+  },
+  {
+   "path": "docker-compose.yml",
+   "status": "added",
+   "additions": 50,
+   "deletions": 0,
+   "patch_chars": 1606
+  },
+  {
+   "path": "lowdb-delete.md",
+   "status": "added",
+   "additions": 171,
+   "deletions": 0,
+   "patch_chars": 22127
+  },
+  {
+   "path": "package.json",
+   "status": "modified",
+   "additions": 18,
+   "deletions": 14,
+   "patch_chars": 4239
+  },
+  {
+   "path": "playwright.config.ts",
+   "status": "modified",
+   "additions": 6,
+   "deletions": 4,
+   "patch_chars": 1252
+  },
+  {
+   "path": "pnpm-lock.yaml",
+   "status": "modified",
+   "additions": 344,
+   "deletions": 90,
+   "patch_chars": 39263
+  },
+  {
+   "path": "prisma/migrations/20261108224914_init/migration.sql",
+   "status": "added",
+   "additions": 181,
+   "deletions": 0,
+   "patch_chars": 5054
+  },
+  {
+   "path": "prisma/migrations/20261108235736_add_bank_transfer_status_and_logs/migration.sql",
+   "status": "added",
+   "additions": 37,
+   "deletions": 0,
+   "patch_chars": 1423
+  },
+  {
+   "path": "prisma/migrations/20261109004101_make_user_profile_fields_optional/migration.sql",
+   "status": "added",
+   "additions": 5,
+   "deletions": 0,
+   "patch_chars": 219
+  },
+  {
+   "path": "prisma/migrations/migration_lock.toml",
+   "status": "added",
+   "additions": 3,
+   "deletions": 0,
+   "patch_chars": 146
+  },
+  {
+   "path": "prisma/schema.prisma",
+   "status": "added",
+   "additions": 184,
+   "deletions": 0,
+   "patch_chars": 4439
+  },
+  {
+   "path": "renovate.json",
+   "status": "modified",
+   "additions": 0,
+   "deletions": 2,
+   "patch_chars": 223
+  },
+  {
+   "path": "scripts/generateSeedData.ts",
+   "status": "removed",
+   "additions": 0,
+   "deletions": 15,
+   "patch_chars": 459
+  },
+  {
+   "path": "scripts/generateTestIdList.ts",
+   "status": "added",
+   "additions": 700,
+   "deletions": 0,
+   "patch_chars": 25735
+  },
+  {
+   "path": "scripts/mock-aws-exports-es5.js",
+   "status": "modified",
+   "additions": 2,
+   "deletions": 2,
+   "patch_chars": 506
+  },
+  {
+   "path": "scripts/mock-aws-exports.js",
+   "status": "modified",
+   "additions": 2,
+   "deletions": 2,
+   "patch_chars": 506
+  },
+  {
+   "path": "scripts/seedDataUtils.ts",
+   "status": "removed",
+   "additions": 0,
+   "deletions": 600,
+   "patch_chars": 19019
+  },
+  {
+   "path": "src/__tests__/bankaccount-db.test.ts",
+   "status": "added",
+   "additions": 59,
+   "deletions": 0,
+   "patch_chars": 2032
+  },
+  {
+   "path": "src/__tests__/bankaccounts.test.ts",
+   "status": "removed",
+   "additions": 0,
+   "deletions": 60,
+   "patch_chars": 1926
+  },
+  {
+   "path": "src/__tests__/banktransfer-db.test.ts",
+   "status": "added",
+   "additions": 114,
+   "deletions": 0,
+   "patch_chars": 4152
+  },
+  {
+   "path": "src/__tests__/banktransfer-service.test.ts",
+   "status": "added",
+   "additions": 202,
+   "deletions": 0,
+   "patch_chars": 7802
+  },
+  {
+   "path": "src/__tests__/comments.test.ts",
+   "status": "removed",
+   "additions": 0,
+   "deletions": 40,
+   "patch_chars": 1269
+  },
+  {
+   "path": "src/__tests__/contact-db.test.ts",
+   "status": "added",
+   "additions": 84,
+   "deletions": 0,
+   "patch_chars": 2925
+  },
+  {
+   "path": "src/__tests__/contacts.test.ts",
+   "status": "removed",
+   "additions": 0,
+   "deletions": 59,
+   "patch_chars": 1876
+  },
+  {
+   "path": "src/__tests__/db-setup/env.ts",
+   "status": "added",
+   "additions": 4,
+   "deletions": 0,
+   "patch_chars": 166
+  },
+  {
+   "path": "src/__tests__/db-setup/global.ts",
+   "status": "added",
+   "additions": 24,
+   "deletions": 0,
+   "patch_chars": 849
+  },
+  {
+   "path": "src/__tests__/db-setup/reset.ts",
+   "status": "added",
+   "additions": 11,
+   "deletions": 0,
+   "patch_chars": 505
+  },
+  {
+   "path": "src/__tests__/db-setup/testDb.ts",
+   "status": "added",
+   "additions": 35,
+   "deletions": 0,
+   "patch_chars": 1170
+  },
+  {
+   "path": "src/__tests__/generateSeedData.test.ts",
+   "status": "removed",
+   "additions": 0,
+   "deletions": 60,
+   "patch_chars": 1965
+  },
+  {
+   "path": "src/__tests__/like-comment-db.test.ts",
+   "status": "added",
+   "additions": 71,
+   "deletions": 0,
+   "patch_chars": 2379
+  },
+  {
+   "path": "src/__tests__/likes.test.ts",
+   "status": "removed",
+   "additions": 0,
+   "deletions": 38,
+   "patch_chars": 1114
+  },
+  {
+   "path": "src/__tests__/notification-db.test.ts",
+   "status": "added",
+   "additions": 98,
+   "deletions": 0,
+   "patch_chars": 3931
+  },
+  {
+   "path": "src/__tests__/notifications.test.ts",
+   "status": "removed",
+   "additions": 0,
+   "deletions": 142,
+   "patch_chars": 4757
+  },
+  {
+   "path": "src/__tests__/social-db.test.ts",
+   "status": "added",
+   "additions": 119,
+   "deletions": 0,
+   "patch_chars": 5098
+  },
+  {
+   "path": "src/__tests__/transaction-db.test.ts",
+   "status": "added",
+   "additions": 379,
+   "deletions": 0,
+   "patch_chars": 16097
+  },
+  {
+   "path": "src/__tests__/transactions.test.ts",
+   "status": "removed",
+   "additions": 0,
+   "deletions": 324,
+   "patch_chars": 12705
+  },
+  {
+   "path": "src/__tests__/user-db.test.ts",
+   "status": "added",
+   "additions": 144,
+   "deletions": 0,
+   "patch_chars": 4640
+  },
+  {
+   "path": "src/__tests__/users.test.ts",
+   "status": "removed",
+   "additions": 0,
+   "deletions": 53,
+   "patch_chars": 1592
+  },
+  {
+   "path": "src/components/AlertBar.tsx",
+   "status": "modified",
+   "additions": 1,
+   "deletions": 1,
+   "patch_chars": 369
+  },
+  {
+   "path": "src/components/BankAccountForm.tsx",
+   "status": "modified",
+   "additions": 5,
+   "deletions": 5,
+   "patch_chars": 2354
+  },
+  {
+   "path": "src/components/BankAccountItem.tsx",
+   "status": "modified",
+   "additions": 2,
+   "deletions": 2,
+   "patch_chars": 839
+  },
+  {
+   "path": "src/components/BankAccountList.tsx",
+   "status": "modified",
+   "additions": 1,
+   "deletions": 1,
+   "patch_chars": 374
+  },
+  {
+   "path": "src/components/CommentForm.tsx",
+   "status": "modified",
+   "additions": 1,
+   "deletions": 1,
+   "patch_chars": 596
+  },
+  {
+   "path": "src/components/CommentList.tsx",
+   "status": "modified",
+   "additions": 1,
+   "deletions": 1,
+   "patch_chars": 351
+  },
+  {
+   "path": "src/components/CommentListItem.tsx",
+   "status": "modified",
+   "additions": 1,
+   "deletions": 1,
+   "patch_chars": 349
+  },
+  {
+   "path": "src/components/EmptyList.tsx",
+   "status": "modified",
+   "additions": 2,
+   "deletions": 2,
+   "patch_chars": 646
+  },
+  {
+   "path": "src/components/MainLayout.tsx",
+   "status": "modified",
+   "additions": 1,
+   "deletions": 1,
+   "patch_chars": 467
+  },
+  {
+   "path": "src/components/NavBar.tsx",
+   "status": "modified",
+   "additions": 6,
+   "deletions": 6,
+   "patch_chars": 1734
+  },
+  {
+   "path": "src/components/NavDrawer.tsx",
+   "status": "modified",
+   "additions": 20,
+   "deletions": 15,
+   "patch_chars": 4334
+  },
+  {
+   "path": "src/components/NotificationList.tsx",
+   "status": "modified",
+   "additions": 1,
+   "deletions": 1,
+   "patch_chars": 382
+  },
+  {
+   "path": "src/components/NotificationListItem.tsx",
+   "status": "modified",
+   "additions": 3,
+   "deletions": 3,
+   "patch_chars": 1166
+  },
+  {
+   "path": "src/components/SignInForm.tsx",
+   "status": "modified",
+   "additions": 8,
+   "deletions": 6,
+   "patch_chars": 2756
+  },
+  {
+   "path": "src/components/SignUpForm.tsx",
+   "status": "modified",
+   "additions": 7,
+   "deletions": 7,
+   "patch_chars": 3188
+  },
+  {
+   "path": "src/components/SkeletonList.tsx",
+   "status": "modified",
+   "additions": 1,
+   "deletions": 1,
+   "patch_chars": 306
+  },
+  {
+   "path": "src/components/TransactionAmount.tsx",
+   "status": "modified",
+   "additions": 1,
+   "deletions": 1,
+   "patch_chars": 356
+  },
+  {
+   "path": "src/components/TransactionCreateStepThree.tsx",
+   "status": "modified",
+   "additions": 2,
+   "deletions": 2,
+   "patch_chars": 839
+  },
+  {
+   "path": "src/components/TransactionCreateStepTwo.tsx",
+   "status": "modified",
+   "additions": 5,
+   "deletions": 5,
+   "patch_chars": 2649
+  },
+  {
+   "path": "src/components/TransactionDateRangeFilter.tsx",
+   "status": "modified",
+   "additions": 13,
+   "deletions": 10,
+   "patch_chars": 3080
+  },
+  {
+   "path": "src/components/TransactionDetail.tsx",
+   "status": "modified",
+   "additions": 9,
+   "deletions": 9,
+   "patch_chars": 3433
+  },
+  {
+   "path": "src/components/TransactionInfiniteList.tsx",
+   "status": "modified",
+   "additions": 1,
+   "deletions": 1,
+   "patch_chars": 407
+  },
+  {
+   "path": "src/components/TransactionItem.tsx",
+   "status": "modified",
+   "additions": 6,
+   "deletions": 3,
+   "patch_chars": 1418
+  },
+  {
+   "path": "src/components/TransactionList.tsx",
+   "status": "modified",
+   "additions": 1,
+   "deletions": 1,
+   "patch_chars": 442
+  }
+ ]
+}

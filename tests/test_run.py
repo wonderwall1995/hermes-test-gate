@@ -47,7 +47,13 @@ class FakeApp(BaseHTTPRequestHandler):
             return self.reply(status, data if status == 200 else {"error": "not_found"})
         if self.path == "/api/comment":
             status = FakeApp.behavior["comment_status"]
-            return self.reply(status, {"ok": True, "url": "https://github.com/alice/r/pull/3#issuecomment-9", "duplicate": False} if status == 200 else {"error": "github_error"})
+            return self.reply(status, {"ok": True, "url": "https://github.com/alice/r/pull/3#issuecomment-9", "commentId": 9, "duplicate": False} if status == 200 else {"error": "github_error"})
+        if self.path == "/api/report":
+            status = FakeApp.behavior.get("report_status", 200)
+            return self.reply(status, {"ok": True, "url": "https://w.example.dev/r/" + "A" * 43, "expiresAt": 1, "duplicate": False} if status == 200 else {"error": "upload_failed"})
+        if self.path == "/api/comment/update":
+            status = FakeApp.behavior.get("update_status", 200)
+            return self.reply(status, {"ok": True, "url": "https://github.com/alice/r/pull/3#issuecomment-9", "commentId": payload["commentId"]} if status == 200 else {"error": "github_error"})
         return self.reply(404, {"error": "nope"})
 
     def reply(self, status, data):
@@ -57,6 +63,12 @@ class FakeApp(BaseHTTPRequestHandler):
         self.send_header("content-length", str(len(raw)))
         self.end_headers()
         self.wfile.write(raw)
+
+
+def final_comments():
+    """결과를 싣는 코멘트 요청들. 확인 코멘트(-ack) 게시는 제외하고, 확인 코멘트 수정과 대체 게시를 모은다."""
+    return [p for path, p in FakeApp.log
+            if path == "/api/comment/update" or (path == "/api/comment" and not p["deliveryId"].endswith("-ack"))]
 
 
 FAKE_CLAUDE = """#!/usr/bin/env python3
@@ -204,8 +216,11 @@ class ExecuteTest(Base):
         self.assertEqual(summary["report"], "saved")
         self.assertNotIn("/", run.format_summary(dict(summary, comment="skipped")))
         self.assertEqual(renames[0][1:], ["sessions", "rename", "sess_d-1", "[PR3 - T #1]"])
-        posted = [p for path, p in FakeApp.log if path == "/api/comment"][0]
-        self.assertEqual(posted["deliveryId"], "d-1")
+        acks = [p for path, p in FakeApp.log if path == "/api/comment"]
+        self.assertEqual([p["deliveryId"] for p in acks], ["d-1-ack"])
+        self.assertIn("분석을 시작했습니다", acks[0]["body"])
+        posted = final_comments()[0]
+        self.assertEqual(posted["commentId"], 9, "확인 코멘트를 수정해서 결과를 싣는다")
         self.assertTrue(posted["body"].rstrip().endswith("세션: `[PR3 - T #1]`"))
         report = self.home / "testgate" / "reports" / "d-1.md"
         self.assertEqual(stat.S_IMODE(report.stat().st_mode), 0o600)
@@ -222,8 +237,8 @@ class ExecuteTest(Base):
         os.environ["FAKE_MODE"] = "fail"
         summary, _ = self.execute()
         self.assertEqual(summary["result"], "failed")
-        posted = [p for path, p in FakeApp.log if path == "/api/comment"][0]
-        self.assertEqual(posted["deliveryId"], "d-1-failed")
+        posted = final_comments()[0]
+        self.assertEqual(posted["commentId"], 9, "실패 안내도 확인 코멘트를 수정해서 싣는다")
         self.assertIn("분석에 실패했습니다", posted["body"])
         self.assertNotIn("boom", posted["body"])
         self.assertFalse((self.home / "testgate" / "reports" / "d-1.md").exists())
@@ -248,7 +263,7 @@ class ExecuteTest(Base):
         self.settings["post_comments"] = False
         summary, _ = self.execute()
         self.assertEqual(summary["comment"], "skipped")
-        self.assertFalse([1 for path, _ in FakeApp.log if path == "/api/comment"])
+        self.assertFalse([1 for path, _ in FakeApp.log if path.startswith("/api/comment")])
 
     def test_invalid_request_never_calls_github_or_claude(self):
         summary, _ = self.execute("nothing")
@@ -364,7 +379,7 @@ class FilterSpoolTest(unittest.TestCase):
                 script = home / "testgate" / "testgate-run"
                 script.write_text(self.LAUNCHER)
                 script.chmod(0o755)
-        env = dict(os.environ, TESTGATE_CONFIG=str(home / "testgate.json"))
+        env = dict(os.environ, TESTGATE_CONFIG=str(home / "testgate.json"), HERMES_HOME=str(home))
         env.pop("TESTGATE_NO_SPOOL", None)
         env.update(extra_env or {})
         proc = subprocess.run([sys.executable, str(ROOT / "scripts" / "qa_filter.py")], input=json.dumps(payload),

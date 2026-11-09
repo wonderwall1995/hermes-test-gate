@@ -15,7 +15,7 @@ class PromptTest(unittest.TestCase):
         ids = set(re.findall(r"<<<DATA name=\S+ id=([0-9a-f]+)>>>", out))
         self.assertEqual(len(ids), 1)
         marker = ids.pop()
-        self.assertEqual(out.count(f"<<<END id={marker}>>>"), 7)
+        self.assertEqual(out.count(f"<<<END id={marker}>>>"), 8)
         self.assertNotIn(marker, req["text"])
 
     def test_fake_end_marker_in_text_does_not_match_real_marker(self):
@@ -79,7 +79,8 @@ class ReportTest(unittest.TestCase):
     def test_escaping(self):
         md = report.render(REQ, CONTEXT, RESULT, "more_tests_needed", ["메모 @x"], "[PR3]")
         self.assertNotIn("@someone", md)
-        self.assertNotIn("<b>", md)
+        self.assertNotIn("<b>x", md)
+        self.assertIn("&lt;b&gt;x&lt;/b&gt;", md)
         self.assertNotRegex(md, r"@(?!​)\w")
         self.assertIn("표\\|깨기 줄바꿈", md)
         self.assertNotIn("b`.py", md)
@@ -99,7 +100,7 @@ class ReportTest(unittest.TestCase):
         self.assertIn("# 테스트 설계서", md)
         self.assertIn("커밋 `abc1234`", md)
         self.assertIn("1. 하나", md)
-        self.assertIn("기대 결과: E", md)
+        self.assertIn("| T<br>1. 하나<br>2. 둘 | E |", md)
         self.assertEqual(md.rstrip().splitlines()[-1], "세션: `[PR3-abc1234]`")
 
 

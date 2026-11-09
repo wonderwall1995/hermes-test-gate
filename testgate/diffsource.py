@@ -3,7 +3,6 @@
 import re
 import subprocess
 
-MAX_DIFF_CHARS = 120000
 # git 인자로 쓸 수 있는 이름. 앞의 '-'는 옵션으로 해석되므로 금지한다.
 REF_PATTERN = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._/@~^-]*$")
 
@@ -32,24 +31,6 @@ def split_diff_by_file(diff_text):
     return blocks
 
 
-def limit_diff(files, blocks, max_chars):
-    """상한 안에서 앞쪽 블록부터 담는다. 담지 못한 파일은 diff_included=False로 표시한다."""
-    total = 0
-    kept = []
-    truncated = False
-    for index, block in enumerate(blocks):
-        if total + len(block) > max_chars:
-            truncated = True
-            for later in range(index, len(files)):
-                files[later]["diff_included"] = False
-            break
-        kept.append(block)
-        total += len(block)
-        if index < len(files):
-            files[index]["diff_included"] = True
-    return "".join(kept), truncated
-
-
 def blocks_by_path(diff_text):
     """'diff --git a/x b/y' 블록을 새 경로(b/ 쪽)로 찾을 수 있게 한다."""
     result = {}
@@ -62,34 +43,16 @@ def blocks_by_path(diff_text):
 
 
 def apply_limit(context, max_chars):
-    """이미 만들어진 맥락의 diff를 다시 줄인다. 파일 순서대로 담고 못 담은 파일은 diff_included=False이다."""
-    blocks = blocks_by_path(context["diff"])
-    total = 0
-    kept = []
-    truncated = context["truncated"]
-    files = []
-    for f in context["files"]:
-        f = dict(f)
-        block = blocks.get(f["path"])
-        if block is None or not f.get("diff_included", True):
-            f["diff_included"] = False
-            truncated = True
-        elif total + len(block) > max_chars:
-            f["diff_included"] = False
-            truncated = True
-        else:
-            kept.append(block)
-            total += len(block)
-        files.append(f)
-    return dict(context, files=files, diff="".join(kept), truncated=truncated)
+    """호환용 얇은 함수. 예산 배분은 testgate.budget.apply 가 한다 (순환 참조를 피하려고 늦게 가져온다)."""
+    from testgate import budget
+    return budget.apply(context, {"max_diff_chars": max_chars})
 
 
 class LocalGitSource:
     """로컬 git 저장소에서 diff를 만든다. 개발과 시험에 쓴다."""
 
-    def __init__(self, repo_path, max_diff_chars=MAX_DIFF_CHARS):
+    def __init__(self, repo_path):
         self.repo_path = repo_path
-        self.max_diff_chars = max_diff_chars
 
     def _git(self, *args):
         result = subprocess.run(
@@ -123,16 +86,16 @@ class LocalGitSource:
                 "deletions": 0 if deleted == "-" else int(deleted),
                 "diff_included": True,
             })
-        raw = self._git("diff", "--no-renames", "--no-color", *spec)
-        blocks = split_diff_by_file(raw)
-        diff, truncated = limit_diff(files, blocks, self.max_diff_chars)
+        # 크기 제한은 여기서 하지 않는다. 예산 배분은 budget.apply 가 한다.
+        diff = self._git("diff", "--no-renames", "--no-color", *spec)
         return {
             "title": title,
             "body": body,
             "base_ref": base_ref,
             "head_sha": head_sha,
             "scope": scope,
+            "commit": commit,
             "files": files,
             "diff": diff,
-            "truncated": truncated,
+            "truncated": False,
         }

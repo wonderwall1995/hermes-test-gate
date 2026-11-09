@@ -1,0 +1,12 @@
+{
+  "allowed_authors": ["여기에 /qa 를 쓸 GitHub 로그인"],
+  "allowed_repo_owners": ["여기에 분석을 허용할 레포 소유자"],
+  "analysis": {
+    "claude_model": "claude-sonnet-5-5",
+    "claude_effort": "medium",
+    "timeout_seconds": 300,
+    "max_diff_chars": 120000,
+    "github_app_url": "http://127.0.0.1:3200",
+    "post_comments": true
+  }
+}
