@@ -318,7 +318,7 @@ class FreeModeAnalyzeTest(ClaudeMixin, unittest.TestCase):
 
 
 class RunContinuityTest(Base):
-    """래퍼 전체 흐름: 순번, 이름, 기록, 이어받기, 자유 대화."""
+    """분석 명령 전체 흐름: 순번, 이름, 기록, 이어받기, 자유 대화."""
 
     def setUp(self):
         super().setUp()

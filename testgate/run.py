@@ -118,7 +118,7 @@ def _guide(request, settings, app):
     if settings["post_comments"]:
         try:
             summary["comment"] = app.post_comment(request["repo"], request["pr"], markdown, request["deliveryId"])
-        except Exception as exc:  # noqa: BLE001 - 안내 실패가 래퍼를 죽이면 안 된다
+        except Exception as exc:  # noqa: BLE001 - 안내 실패가 분석 명령을 죽이면 안 된다
             log.exception("안내 코멘트 게시 실패 id=%r", request["deliveryId"])
             summary["comment"] = "failed"
             summary["error"] = _short_error(exc)
