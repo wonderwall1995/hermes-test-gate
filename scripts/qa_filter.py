@@ -7,6 +7,8 @@
 통과한 요청은 이 스크립트가 직접 분석 래퍼(testgate/testgate-run)를 백그라운드로 시작한다.
 Hermes 세션의 LLM은 분석을 실행하지 않는다 (LLM이 자동화 요청을 보안상 거부하는 경우가 있어 분석이 조용히 사라지기 때문).
 래퍼를 찾을 수 없으면 아무것도 하지 않고 종료 코드 1로 끝난다 (fail closed).
+설정에 start_command(첫 인자가 절대 경로인 인자 목록)가 있으면 래퍼 대신 그 명령을 시작한다. delivery ID를 마지막 인자로 붙인다.
+이 명령이 무엇인지는 이 스크립트가 모른다. 분석이 일어나게 하는 것(래퍼 실행)은 명령의 책임이다.
 
 지원하는 위치는 PR 대화창 코멘트뿐이다. 이슈 코멘트와 코드 줄에 단 리뷰 코멘트에서 /qa 를 쓰면
 분석하지 않고 래퍼가 안내 코멘트만 단다 (결과의 "unsupported" 값). 커밋 코멘트는 번호가 없어 답할 수 없으므로 버린다.
@@ -86,7 +88,24 @@ def load_config(path=None):
         if not isinstance(values, list) or not values or not all(isinstance(v, str) and v for v in values):
             raise ConfigError(f"설정 파일의 {key}는 비어 있지 않은 문자열 목록이어야 한다: {path}")
         config[key] = values
+    command = read_start_command(data, path)
+    if command:
+        config["start_command"] = command
     return config
+
+
+def read_start_command(data, path):
+    """선택 항목 start_command(분석을 시작할 명령)를 읽는다. 없으면 None이다.
+
+    명령은 인자 목록이고 첫 인자는 절대 경로여야 한다. 상대 경로나 이름만 있으면 PATH에 있는 다른 프로그램이 실행될 수 있다.
+    적혀 있는데 형식이 틀리면 조용히 기본값으로 돌아가지 않고 ConfigError를 낸다. 분석이 엉뚱한 곳에서 시작되는 것을 막기 위해서이다.
+    """
+    value = data.get("start_command") if isinstance(data, dict) else None
+    if value is None:
+        return None
+    if not isinstance(value, list) or not value or not all(isinstance(v, str) and v for v in value) or not os.path.isabs(value[0]):
+        raise ConfigError(f"설정 파일의 start_command는 인자 목록이어야 하고 첫 인자는 절대 경로여야 한다: {path}")
+    return list(value)
 
 
 def decide(payload, config):
@@ -175,15 +194,17 @@ def launcher_path():
     return home_dir() / "testgate" / "testgate-run"
 
 
-def launch(delivery_id):
-    """분석 래퍼를 백그라운드로 시작하고 기다리지 않는다.
+def launch(delivery_id, command=None):
+    """분석을 시작하고 기다리지 않는다. 시작 명령은 설정의 start_command이고, 없으면 분석 래퍼이다.
 
-    표준 입출력을 모두 닫고 새 세션으로 띄운다. 그렇지 않으면 Hermes가 이 스크립트의 출력이 끝나기를 기다려 래퍼가 끝날 때까지 멈춘다.
+    명령 뒤에 delivery ID를 마지막 인자로 붙인다. 표준 입출력을 모두 닫고 새 세션으로 띄운다.
+    그렇지 않으면 Hermes가 이 스크립트의 출력이 끝나기를 기다려 명령이 끝날 때까지 멈춘다.
     """
+    argv = list(command) if command else [str(launcher_path())]
     subprocess.Popen(
-        [str(launcher_path()), delivery_id],
+        argv + [delivery_id],
         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        start_new_session=True, close_fds=True, cwd=str(launcher_path().parent),
+        start_new_session=True, close_fds=True, cwd=str(pathlib.Path(argv[0]).parent),
     )
 
 
@@ -236,14 +257,19 @@ def main():
     result = decide(payload, config)
     if result is not None:
         if not os.environ.get("TESTGATE_NO_SPOOL"):
-            # 래퍼가 없으면 요청을 저장하지도 않고 버린다. 저장만 되고 아무도 처리하지 않는 요청을 만들지 않기 위해서다.
-            if not os.access(launcher_path(), os.X_OK):
+            # 시작할 명령이 없으면 요청을 저장하지도 않고 버린다. 저장만 되고 아무도 처리하지 않는 요청을 만들지 않기 위해서다.
+            command = config.get("start_command")
+            if command:
+                if not os.access(command[0], os.X_OK):
+                    sys.stderr.write(f"분석 시작 명령을 실행할 수 없다: {command[0]}")
+                    sys.exit(1)
+            elif not os.access(launcher_path(), os.X_OK):
                 sys.stderr.write(f"분석 래퍼를 실행할 수 없다: {launcher_path()}")
                 sys.exit(1)
             try:
                 created = write_request(payload, result["qa"], result.get("unsupported"))
                 if created:
-                    launch(payload["deliveryId"])
+                    launch(payload["deliveryId"], command)
             except (ConfigError, OSError, KeyError, TypeError) as exc:
                 sys.stderr.write(f"요청을 처리할 수 없다: {exc}")
                 sys.exit(1)

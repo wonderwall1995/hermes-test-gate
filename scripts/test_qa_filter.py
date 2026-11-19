@@ -210,6 +210,26 @@ class ConfigTest(unittest.TestCase):
             with self.assertRaises(qa_filter.ConfigError, msg=text):
                 qa_filter.load_config(self.write(text))
 
+    BASE = '"allowed_authors": ["a"], "allowed_repo_owners": ["b"]'
+
+    def test_start_command_is_optional_and_absent_by_default(self):
+        self.assertNotIn("start_command", qa_filter.load_config(self.write("{" + self.BASE + "}")))
+        self.assertNotIn("start_command", qa_filter.load_config(self.write("{" + self.BASE + ', "start_command": null}')))
+
+    def test_valid_start_command_is_returned_as_a_list(self):
+        path = self.write("{" + self.BASE + ', "start_command": ["/opt/x/run", "--flag", "v"]}')
+        self.assertEqual(qa_filter.load_config(path)["start_command"], ["/opt/x/run", "--flag", "v"])
+
+    def test_malformed_start_command_fails_closed_instead_of_falling_back_to_the_default(self):
+        bad = ['"start_command": []', '"start_command": "/opt/x/run"', '"start_command": ["run"]',
+               '"start_command": ["./run"]', '"start_command": ["/opt/x/run", ""]', '"start_command": ["/opt/x/run", 5]',
+               '"start_command": {"a": 1}', '"start_command": 5', '"start_command": ""']
+        for fragment in bad:
+            with self.subTest(fragment=fragment):
+                with self.assertRaises(qa_filter.ConfigError) as ctx:
+                    qa_filter.load_config(self.write("{" + self.BASE + ", " + fragment + "}"))
+                self.assertIn("start_command", str(ctx.exception))
+
     def test_multiple_allowed_authors(self):
         config = {"allowed_authors": ["alice", "bob"], "allowed_repo_owners": ["alice"]}
         payload = make_payload("/qa x", author={"login": "bob", "type": "User"})

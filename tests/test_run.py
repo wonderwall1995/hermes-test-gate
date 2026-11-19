@@ -485,5 +485,125 @@ class FilterSpoolTest(unittest.TestCase):
         self.assertTrue(json.loads(proc.stdout)["qa"]["free"])
 
 
+
+class FilterStartCommandTest(unittest.TestCase):
+    """설정의 start_command: 필터가 분석 래퍼 대신 이 명령을 시작한다. 없으면 지금과 똑같다."""
+
+    PAYLOAD = FilterSpoolTest.PAYLOAD
+    # 명령은 받은 인자를 기록 파일에 한 줄로 적는다. 기록 파일의 위치는 첫 번째 고정 인자로 받는다.
+    STUB = "#!/usr/bin/env bash\necho \"$@|$(pwd)\" >> \"$1\"\n"
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.home = pathlib.Path(tmp.name) / "home"
+        (self.home / "testgate").mkdir(parents=True)
+        self.bin = pathlib.Path(tmp.name) / "bin"
+        self.bin.mkdir()
+        self.record = pathlib.Path(tmp.name) / "record.txt"
+        self.addCleanup(self._let_command_finish)
+
+    def _let_command_finish(self):
+        """백그라운드로 뜬 명령이 기록을 쓰는 도중 임시 폴더를 지우면 정리가 실패한다. 요청이 저장됐으면 기록이 보일 때까지 기다린다."""
+        if (self.home / "testgate" / "requests").is_dir() and self.expect_launch:
+            self.recorded()
+
+    expect_launch = False
+
+    def stub(self, name="start"):
+        path = self.bin / name
+        path.write_text(self.STUB)
+        path.chmod(0o755)
+        return path
+
+    def run_filter(self, start_command, payload=None, extra_config=None):
+        config = {"allowed_authors": ["alice"], "allowed_repo_owners": ["alice"]}
+        if start_command is not None:
+            config["start_command"] = start_command
+        config.update(extra_config or {})
+        (self.home / "testgate.json").write_text(json.dumps(config))
+        env = dict(os.environ, TESTGATE_CONFIG=str(self.home / "testgate.json"), HERMES_HOME=str(self.home))
+        env.pop("TESTGATE_NO_SPOOL", None)
+        return subprocess.run([sys.executable, str(ROOT / "scripts" / "qa_filter.py")], input=json.dumps(payload or self.PAYLOAD),
+                              capture_output=True, text=True, env=env, timeout=20)
+
+    def recorded(self, wait=5.0):
+        deadline = time.time() + wait
+        while time.time() < deadline:
+            if self.record.exists() and self.record.read_text().strip():
+                return self.record.read_text().splitlines()
+            time.sleep(0.05)
+        return []
+
+    def test_the_configured_command_is_started_with_the_delivery_id_as_the_last_argument(self):
+        self.expect_launch = True
+        command = self.stub()
+        proc = self.run_filter([str(command), str(self.record), "--flag"])
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        (line,) = self.recorded()
+        args, cwd = line.rsplit("|", 1)
+        self.assertEqual(args, f"{self.record} --flag e69-1")
+        self.assertEqual(pathlib.Path(cwd).resolve(), self.bin.resolve())  # 명령이 있는 폴더에서 실행된다
+
+    def test_the_default_wrapper_is_not_needed_when_a_command_is_configured(self):
+        self.expect_launch = True
+        self.assertFalse((self.home / "testgate" / "testgate-run").exists())
+        proc = self.run_filter([str(self.stub()), str(self.record)])
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(len(self.recorded()), 1)
+
+    def test_the_configured_command_replaces_the_wrapper_rather_than_adding_to_it(self):
+        self.expect_launch = True
+        wrapper = self.home / "testgate" / "testgate-run"
+        wrapper_record = self.home / "wrapper-record.txt"
+        wrapper.write_text(f"#!/usr/bin/env bash\necho ran >> {wrapper_record}\n")
+        wrapper.chmod(0o755)
+        self.run_filter([str(self.stub()), str(self.record)])
+        self.recorded()
+        time.sleep(0.3)
+        self.assertFalse(wrapper_record.exists())
+
+    def test_a_missing_command_fails_closed_and_stores_nothing(self):
+        proc = self.run_filter([str(self.bin / "no-such-command")])
+        self.assertEqual((proc.returncode, proc.stdout), (1, ""))
+        self.assertIn("분석 시작 명령", proc.stderr)
+        self.assertFalse((self.home / "testgate" / "requests").exists())
+
+    def test_a_command_that_is_not_executable_fails_closed(self):
+        plain = self.bin / "plain"
+        plain.write_text("x")
+        proc = self.run_filter([str(plain)])
+        self.assertEqual((proc.returncode, proc.stdout), (1, ""))
+        self.assertFalse((self.home / "testgate" / "requests").exists())
+
+    def test_a_malformed_setting_fails_closed_and_does_not_fall_back_to_the_wrapper(self):
+        wrapper = self.home / "testgate" / "testgate-run"
+        wrapper.write_text("#!/usr/bin/env bash\ntrue\n")
+        wrapper.chmod(0o755)
+        for bad in (["start"], [], "x", [str(self.bin / "x"), 5]):
+            with self.subTest(bad=bad):
+                proc = self.run_filter(bad)
+                self.assertEqual((proc.returncode, proc.stdout), (1, ""))
+                self.assertIn("start_command", proc.stderr)
+                self.assertFalse((self.home / "testgate" / "requests").exists())
+
+    def test_an_existing_request_does_not_start_the_command_again(self):
+        self.expect_launch = True
+        command = self.stub()
+        self.run_filter([str(command), str(self.record)])
+        self.assertEqual(len(self.recorded()), 1)
+        self.run_filter([str(command), str(self.record)])
+        time.sleep(0.5)
+        self.assertEqual(len(self.record.read_text().splitlines()), 1)
+
+    def test_comments_that_are_not_qa_commands_start_nothing(self):
+        payload = json.loads(json.dumps(self.PAYLOAD))
+        payload["event"]["body"] = "그냥 코멘트"
+        proc = self.run_filter([str(self.stub()), str(self.record)], payload)
+        self.assertEqual((proc.returncode, proc.stdout), (0, ""))
+        time.sleep(0.3)
+        self.assertFalse(self.record.exists())
+
+
 if __name__ == "__main__":
     unittest.main()
