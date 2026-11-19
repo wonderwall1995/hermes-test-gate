@@ -19,28 +19,21 @@ DEFAULTS = {
     "mention_requester": True,
     "upload_report": False,
     "notify_with_new_comment": False,
-    "route_name": "github-app",
-    "hermes_binary": "hermes",
     "retention_days": 30,
 }
 
 
+REPO_CONFIG = pathlib.Path(__file__).resolve().parent.parent / "testgate.json"
+
+
 def config_path():
-    """설정 파일 경로. 순서: 환경 변수 TESTGATE_CONFIG, 설치가 남긴 안내 파일(저장소 안의 경로), 홈 폴더의 testgate.json."""
+    """설정 파일 경로. 환경 변수 TESTGATE_CONFIG가 있으면 그것, 없으면 저장소의 testgate.json(Git 제외)."""
     explicit = os.environ.get("TESTGATE_CONFIG")
-    if explicit:
-        return pathlib.Path(explicit)
-    try:
-        for line in (hermes_home() / "testgate" / "config.path").read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and os.path.isabs(line):
-                return pathlib.Path(line)
-    except OSError:
-        pass
-    return hermes_home() / "testgate.json"
+    return pathlib.Path(explicit) if explicit else REPO_CONFIG
 
 
 def hermes_home():
+    """데이터 폴더(<홈>/testgate: 보고서, PR 기록)의 기준. 기본 ~/.hermes."""
     home = os.environ.get("HERMES_HOME")
     return pathlib.Path(home) if home else pathlib.Path.home() / ".hermes"
 

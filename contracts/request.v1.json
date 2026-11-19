@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "deliveryId": "d-0001",
+  "route": "testgate",
+  "repo": "acme/shop",
+  "pr": 7,
+  "target": "pull_request",
+  "author": "tester",
+  "url": "https://github.com/acme/shop/pull/7#issuecomment-1",
+  "commentId": 1,
+  "body": "/qa 음수 잔액 계좌를 넣고 합계가 양수 잔액만 더한 값인지 확인했다.",
+  "receivedAt": 1700000000
+}

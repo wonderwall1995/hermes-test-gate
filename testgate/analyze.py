@@ -11,6 +11,12 @@ class AnalysisError(Exception):
     pass
 
 
+def _drain_notes(knowledge):
+    """참고 문서 소스가 보고서에 남길 안내를 가지고 있으면 꺼낸다. 안내가 없는 소스는 빈 목록이다."""
+    drain = getattr(knowledge, "drain_notes", None)
+    return list(drain()) if callable(drain) else []
+
+
 def reduced_context(context, keep_paths):
     """평가할 파일만 남긴 맥락. 이미 확인된 파일의 diff는 빼서 입력을 줄인다."""
     keep = set(keep_paths)
@@ -64,6 +70,7 @@ def analyze(request, context, knowledge, runner, history=None, name=None):
     prompt_chars = 0
     if to_evaluate:
         docs = knowledge.load(context)
+        notes += _drain_notes(knowledge)
         user_prompt = prompt.build_user_prompt(
             request, reduced_context(context, [f["path"] for f in to_evaluate]), docs,
             history=ledger.render_history(history), verified=sorted(carried),
@@ -139,7 +146,9 @@ def analyze_free(request, context, knowledge, runner, history=None, name=None, r
     name = name or _default_name(request, context)
     if not request.get("commit"):
         context = dict(context, diff="")
-    user_prompt = prompt.build_free_prompt(request, context, knowledge.load(context), ledger.render_history(history),
+    docs = knowledge.load(context)
+    notes = _drain_notes(knowledge)
+    user_prompt = prompt.build_free_prompt(request, context, docs, ledger.render_history(history),
                                            rules=budget.rules_text(rules_settings))
     _check_size(user_prompt)
     raw, meta = runner.run(prompt.FREE_SYSTEM_PROMPT, user_prompt, schema.FREE_SCHEMA)
@@ -149,6 +158,6 @@ def analyze_free(request, context, knowledge, runner, history=None, name=None, r
         raise AnalysisError(f"Claude 출력이 스키마와 다르다: {exc}")
     return {
         "markdown": report.render_free(answer, name), "verdict": "-", "mode": "free", "session_name": name,
-        "notes": [], "result": {"answer": answer}, "meta": meta, "prompt_chars": len(user_prompt),
+        "notes": notes, "result": {"answer": answer}, "meta": meta, "prompt_chars": len(user_prompt),
         "files_record": {}, "summary": "", "answer": answer,
     }

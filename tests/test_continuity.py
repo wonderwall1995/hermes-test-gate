@@ -9,7 +9,7 @@ import tempfile
 import threading
 import unittest
 
-from testgate import analyze, diffsource, knowledge, ledger, report, runner
+from testgate import run as run_mod, analyze, diffsource, knowledge, ledger, report, runner
 from tests import test_run
 from tests.test_run import Base, FakeApp
 
@@ -345,9 +345,9 @@ class RunContinuityTest(Base):
         self.spool("d-1")
         self.spool("d-2")
         first, _ = self.execute("d-1")
-        second, renames = self.execute("d-2")
+        second, _ = self.execute("d-2")
         self.assertEqual((first["session"], second["session"]), ("[PR3 - T #1]", "[PR3 - T #2]"))
-        self.assertEqual(renames[0][-1], "[PR3 - T #2]")
+        self.assertEqual(json.loads(run_mod.result_line(second))["session_name"], "[PR3 - T #2]")
         history_block = self.calls()[1]["stdin"].split("name=history")[1].split("<<<END")[0]
         self.assertIn("a 해 주세요", history_block)
         posts = test_run.final_comments()

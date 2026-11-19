@@ -1,6 +1,7 @@
 {
-  "allowed_authors": ["여기에 /qa 를 쓸 GitHub 로그인"],
-  "allowed_repo_owners": ["여기에 분석을 허용할 레포 소유자"],
+  "allowed_repo_owners": [
+    "여기에 분석을 허용할 레포 소유자"
+  ],
   "analysis": {
     "claude_model": "claude-sonnet-5-5",
     "claude_effort": "medium",
