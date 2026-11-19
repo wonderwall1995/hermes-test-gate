@@ -43,3 +43,24 @@ class DirectoryKnowledge:
                 total += len(text)
                 docs.append({"id": str(path.relative_to(root)), "title": path.stem, "text": text})
         return docs
+
+
+class CompositeKnowledge:
+    """여러 참고 문서 소스를 순서대로 이어 붙인다. 보고서에 남길 안내도 순서대로 모은다."""
+
+    def __init__(self, sources):
+        self.sources = sources
+
+    def load(self, context):
+        docs = []
+        for source in self.sources:
+            docs.extend(source.load(context))
+        return docs
+
+    def drain_notes(self):
+        notes = []
+        for source in self.sources:
+            drain = getattr(source, "drain_notes", None)
+            if callable(drain):
+                notes.extend(drain())
+        return notes

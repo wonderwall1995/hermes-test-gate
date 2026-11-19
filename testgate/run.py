@@ -17,7 +17,7 @@ import sys
 import time
 
 from testgate import analyze as analyze_mod
-from testgate import budget, config, diffsource, githubapp, knowledge, ledger, prompt, report, runner
+from testgate import budget, config, contextfile, diffsource, githubapp, knowledge, ledger, prompt, report, runner
 
 DELIVERY_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 REPO_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -297,6 +297,8 @@ def execute(delivery_id, home, settings, allowed_owners, claude, app, hermes_run
         except OSError:
             history = []
         kb = knowledge.DirectoryKnowledge(settings["knowledge_dirs"]) if settings["knowledge_dirs"] else knowledge.NullKnowledge()
+        # 요청 파일 옆에 다른 프로그램이 둔 해설 파일이 있으면 읽는다. 없으면 아무 일도 없다.
+        kb = knowledge.CompositeKnowledge([kb, contextfile.ContextFileKnowledge(data_dir(home) / "requests" / f"{delivery_id}.context.json")])
         if request["free"] and not request["text"].strip():
             # 질문이 비어 있으면 Claude를 부르지 않고 안내만 한다.
             outcome = {"markdown": report.render_free(EMPTY_FREE_ANSWER, name), "verdict": "-", "mode": "free",
