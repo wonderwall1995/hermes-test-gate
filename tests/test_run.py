@@ -379,12 +379,25 @@ class FilterSpoolTest(unittest.TestCase):
                 script = home / "testgate" / "testgate-run"
                 script.write_text(self.LAUNCHER)
                 script.chmod(0o755)
+            # 정리는 나중에 등록한 것부터 실행된다. 그래서 이 대기가 임시 폴더 삭제보다 먼저 돈다.
+            self.addCleanup(self._let_launcher_finish, home)
         env = dict(os.environ, TESTGATE_CONFIG=str(home / "testgate.json"), HERMES_HOME=str(home))
         env.pop("TESTGATE_NO_SPOOL", None)
         env.update(extra_env or {})
         proc = subprocess.run([sys.executable, str(ROOT / "scripts" / "qa_filter.py")], input=json.dumps(payload),
                               capture_output=True, text=True, env=env, timeout=20)
         return proc, home
+
+    def _let_launcher_finish(self, home, wait=5.0):
+        """필터가 백그라운드로 띄운 실행기가 기록을 쓰는 도중에 임시 폴더를 지우면 정리가 실패한다.
+
+        (OSError: Directory not empty, 약 0.5% 확률로 나타났다.) 요청이 저장됐고 실행기가 있으면 실행기가 뜬 것이므로,
+        기록이 보일 때까지 기다린 뒤 정리한다. 이 시험들은 실행기의 동작이 아니라 필터의 출력을 확인하기 때문에
+        본문에서는 기다리지 않는다.
+        """
+        testgate_dir = home / "testgate"
+        if (testgate_dir / "testgate-run").exists() and (testgate_dir / "requests").is_dir():
+            self.launched(home, wait=wait)
 
     def launched(self, home, wait=3.0):
         marker = home / "testgate" / "launched.txt"
