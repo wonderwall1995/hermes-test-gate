@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# testgate 분석 명령. controller의 routes에 이 파일의 절대 경로를 적는다.
+# 사용법: bin/testgate-run --request <요청 파일> --context <맥락 파일>
+# 설치 없이 저장소 자리에서 실행한다. 표준 출력은 결과 한 줄(contracts/result.v1.json)이고,
+# 기록(표준 오류)은 <홈>/logs/testgate.log 로 보낸다. 홈은 HERMES_HOME, 기본 ~/.hermes 이다.
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}"
+LOG_DIR="${HERMES_HOME:-$HOME/.hermes}/logs"
+LOG="$LOG_DIR/testgate.log"
+umask 077
+mkdir -p "$LOG_DIR" 2>/dev/null
+# 로그가 1MB를 넘으면 한 세대만 남기고 새로 시작한다.
+if [ -f "$LOG" ] && [ "$(wc -c < "$LOG")" -gt 1048576 ]; then mv -f "$LOG" "$LOG.1" 2>/dev/null; fi
+# 로그 파일을 쓸 수 없으면 버린다. 로그 때문에 분석이 멈추면 안 된다.
+if ! : >> "$LOG" 2>/dev/null; then LOG=/dev/null; fi
+exec python3 -m testgate run "$@" 2>> "$LOG"

@@ -11,8 +11,6 @@ from testgate import config, githubapp, run
 from tests import test_run
 from tests.test_run import Base, FakeApp, final_comments
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "scripts"))
-import qa_filter  # noqa: E402
 
 GOOD_OUTPUT = {"mode": "evaluate", "summary": "요약", "notes": "", "changes": [
     {"path": "a.py", "change_summary": "c", "tested": "no", "evidence_quote": "", "request": "r", "scenarios": []}]}
@@ -141,19 +139,6 @@ class AckFlowTest(Base):
 
 
 class AckSupportTest(unittest.TestCase):
-    def test_filter_stores_the_author_login(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            os.environ["TESTGATE_CONFIG"] = str(pathlib.Path(tmp) / "testgate.json")
-            os.environ["HERMES_HOME"] = tmp
-            self.addCleanup(os.environ.pop, "TESTGATE_CONFIG", None)
-            self.addCleanup(os.environ.pop, "HERMES_HOME", None)
-            payload = {"deliveryId": "d9", "event": {"repo": {"fullName": "alice/r"}, "number": 3,
-                                                    "author": {"login": "alice", "type": "User"}}}
-            parsed = {"commit": None, "text": "x", "truncated": False, "free": False}
-            self.assertTrue(qa_filter.write_request(payload, parsed))
-            data = json.loads((pathlib.Path(tmp) / "testgate" / "requests" / "d9.json").read_text())
-            self.assertEqual(data["author"], "alice")
-
     def test_notify_settings_must_be_booleans(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = pathlib.Path(tmp) / "testgate.json"
@@ -176,59 +161,14 @@ class UsageLogTest(Base):
 
 
 class ConfigLocationTest(unittest.TestCase):
-    """설정 파일은 저장소 안에 있고, 설치된 코드는 안내 파일(config.path)로 그 위치를 찾는다."""
+    """설정 파일은 저장소의 testgate.json(Git 제외)이다. 환경 변수 TESTGATE_CONFIG로 바꿀 수 있다."""
 
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.home = pathlib.Path(self.tmp.name) / "home"
-        self.repo = pathlib.Path(self.tmp.name) / "repo"
-        (self.home / "testgate").mkdir(parents=True)
-        self.repo.mkdir()
-        self.saved = {k: os.environ.get(k) for k in ("HERMES_HOME", "TESTGATE_CONFIG")}
+    def test_default_is_the_repo_file_and_env_overrides(self):
         os.environ.pop("TESTGATE_CONFIG", None)
-        os.environ["HERMES_HOME"] = str(self.home)
-        self.addCleanup(self.restore)
-
-    def restore(self):
-        for k, v in self.saved.items():
-            os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
-
-    def point(self, target):
-        (self.home / "testgate" / "config.path").write_text(f"{target}\n\n# [hermes-test-gate] 생성한 파일입니다.\n", encoding="utf-8")
-
-    def test_pointer_file_is_followed_by_both_readers(self):
-        target = self.repo / "testgate.json"
-        self.point(target)
-        self.assertEqual(config.config_path(), target)
-        self.assertEqual(qa_filter.config_path(), target)
-
-    def test_legacy_location_is_the_fallback_without_a_pointer(self):
-        self.assertEqual(config.config_path(), self.home / "testgate.json")
-        self.assertEqual(qa_filter.config_path(), self.home / "testgate.json")
-
-    def test_environment_variable_wins_over_the_pointer(self):
-        self.point(self.repo / "testgate.json")
+        self.assertEqual(config.config_path(), pathlib.Path(__file__).resolve().parent.parent / "testgate.json")
         os.environ["TESTGATE_CONFIG"] = "/x/y.json"
+        self.addCleanup(os.environ.pop, "TESTGATE_CONFIG", None)
         self.assertEqual(str(config.config_path()), "/x/y.json")
-        self.assertEqual(str(qa_filter.config_path()), "/x/y.json")
-
-    def test_relative_or_comment_only_pointer_is_ignored(self):
-        (self.home / "testgate" / "config.path").write_text("relative/path.json\n# 주석\n", encoding="utf-8")
-        self.assertEqual(config.config_path(), self.home / "testgate.json")
-        (self.home / "testgate" / "config.path").write_text("# 주석만 있음\n", encoding="utf-8")
-        self.assertEqual(qa_filter.config_path(), self.home / "testgate.json")
-
-    def test_requests_and_launcher_live_under_the_home_not_next_to_the_config(self):
-        self.point(self.repo / "testgate.json")
-        self.assertEqual(qa_filter.spool_dir(), self.home / "testgate" / "requests")
-        self.assertEqual(qa_filter.launcher_path(), self.home / "testgate" / "testgate-run")
-
-    def test_filter_reads_accounts_from_the_repo_file(self):
-        (self.repo / "testgate.json").write_text(json.dumps({"allowed_authors": ["bob"], "allowed_repo_owners": ["bob"]}))
-        self.point(self.repo / "testgate.json")
-        self.assertEqual(qa_filter.load_config(), {"allowed_authors": ["bob"], "allowed_repo_owners": ["bob"]})
-        self.assertEqual(config.load_allowed_owners(), ["bob"])
 
 
 class HtmlFileTest(Base):

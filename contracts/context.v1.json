@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "docs": [
+    {"id": "ced:balance", "title": "CED 해설: balance", "text": "# balance\n\n## 정의\n\n개인 User 대상 계좌 잔액 기준 총 금액의 합산\n"}
+  ],
+  "notices": []
+}

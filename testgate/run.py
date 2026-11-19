@@ -1,8 +1,9 @@
-"""Hermes 세션이 실행하는 래퍼. 인자는 delivery ID 하나뿐이다.
+"""분석 명령. 사용법: testgate run --request <요청 파일> --context <맥락 파일>
 
-요청 파일(필터가 저장)을 읽고, github-app에서 PR 맥락을 가져와 분석하고,
-보고서를 파일로 저장하고, github-app을 통해 PR에 코멘트하고, 세션 이름을 바꾼다.
-세션의 LLM이 읽는 표준 출력에는 고정된 형식의 짧은 요약만 쓴다. QA 서술이나 diff는 쓰지 않는다.
+요청 파일과 결과의 모양은 contracts/의 request.v1, result.v1 이다(원본은 hermes-controller).
+요청 파일의 코멘트 원문을 /qa 문법으로 읽고, github-app에서 PR 맥락을 가져와 분석하고,
+보고서를 파일로 저장하고, github-app을 통해 PR에 코멘트한다. 맥락 파일(context.v1)이 있으면 용어집으로 붙인다.
+끝나면 표준 출력의 마지막 줄에 결과 JSON 한 줄을 낸다. 본 프로젝트는 Hermes를 모른다.
 """
 
 import json
@@ -10,14 +11,11 @@ import logging
 import os
 import pathlib
 import re
-import shutil
-import sqlite3
-import subprocess
 import sys
 import time
 
 from testgate import analyze as analyze_mod
-from testgate import budget, config, contextfile, diffsource, githubapp, knowledge, ledger, prompt, report, runner
+from testgate import budget, config, contextfile, diffsource, githubapp, knowledge, ledger, prompt, qa, report, runner
 
 DELIVERY_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 REPO_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -44,43 +42,54 @@ def data_dir(home):
     return pathlib.Path(home) / "testgate"
 
 
-def load_request(home, delivery_id, allowed_owners):
-    """요청 파일을 읽고 값을 다시 검증한다. 파일은 신뢰하지 않는다."""
-    if not DELIVERY_ID_PATTERN.match(delivery_id):
-        raise RunError("delivery ID 형식이 올바르지 않다")
-    path = data_dir(home) / "requests" / f"{delivery_id}.json"
+REQUEST_VERSION = 1
+TARGETS = {"pull_request": None, "issue": "issue", "pull_request_review": "pull_request_review"}
+MAX_REQUEST_BYTES = 1024 * 1024
+
+
+def load_request(path, allowed_owners):
+    """요청 파일(request.v1)을 읽고 값을 다시 검증한다. 파일은 신뢰하지 않는다.
+
+    /qa 명령이 아니면 None을 돌려준다(할 일이 없다). 문제가 있으면 RunError.
+    """
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        raw = pathlib.Path(path).read_bytes()[: MAX_REQUEST_BYTES + 1]
+        data = json.loads(raw.decode("utf-8")) if len(raw) <= MAX_REQUEST_BYTES else None
+    except (OSError, ValueError):
         raise RunError("요청 파일을 읽을 수 없다")
-    repo, pr, commit, text = data.get("repo"), data.get("pr"), data.get("commit"), data.get("text")
+    if not isinstance(data, dict) or data.get("version") != REQUEST_VERSION:
+        raise RunError("요청 파일의 형식이 올바르지 않다")
+    delivery_id, repo, pr, target, body = (data.get(k) for k in ("deliveryId", "repo", "pr", "target", "body"))
+    if not isinstance(delivery_id, str) or not DELIVERY_ID_PATTERN.match(delivery_id) or set(delivery_id) == {"."}:
+        raise RunError("요청의 deliveryId가 올바르지 않다")
     if not isinstance(repo, str) or not REPO_PATTERN.match(repo):
         raise RunError("요청의 repo가 올바르지 않다")
     if repo.split("/")[0] not in allowed_owners:
         raise RunError("허용되지 않은 레포 소유자다")
     if not isinstance(pr, int) or isinstance(pr, bool) or pr < 1:
         raise RunError("요청의 pr가 올바르지 않다")
-    if commit is not None and (not isinstance(commit, str) or not COMMIT_PATTERN.match(commit)):
-        raise RunError("요청의 commit이 올바르지 않다")
-    if not isinstance(text, str):
-        raise RunError("요청의 text가 올바르지 않다")
-    free = data.get("free", False)
-    if not isinstance(free, bool):
-        raise RunError("요청의 free가 올바르지 않다")
-    unsupported = data.get("unsupported")
-    if unsupported is not None and unsupported not in UNSUPPORTED_GUIDANCE:
-        raise RunError("요청의 unsupported가 올바르지 않다")
+    if target not in TARGETS:
+        raise RunError("요청의 target이 올바르지 않다")
+    if not isinstance(body, str):
+        raise RunError("요청의 body가 올바르지 않다")
+    parsed = qa.parse_qa(body)
+    if parsed is None:
+        return None
+    unsupported = TARGETS[target]
     author = data.get("author")
     if not isinstance(author, str) or not LOGIN_PATTERN.match(author):
         author = None  # 멘션에 쓰므로 GitHub 로그인 형식이 아니면 버린다
-    return {"deliveryId": delivery_id, "repo": repo, "pr": pr, "commit": commit, "text": text, "free": free,
+    return {"deliveryId": delivery_id, "repo": repo, "pr": pr,
+            "commit": None if unsupported else parsed["commit"],
+            "text": "" if unsupported else parsed["text"],
+            "free": False if unsupported else parsed["free"],
             "unsupported": unsupported, "author": author}
 
 
 def cleanup(home, retention_days, now=time.time):
-    """보관 기간이 지난 요청과 보고서 파일을 지운다."""
+    """보관 기간이 지난 보고서와 기록 파일을 지운다. 요청 파일은 controller가 관리한다."""
     cutoff = now() - retention_days * 86400
-    for sub in ("requests", "reports", "threads"):
+    for sub in ("reports", "threads"):
         folder = data_dir(home) / sub
         if not folder.is_dir():
             continue
@@ -99,59 +108,12 @@ def write_private(path, text):
         handle.write(text)
 
 
-def find_session_id(home, route, delivery_id):
-    """이 요청의 Hermes 세션 ID를 상태 DB에서 chat_id로 찾는다.
-
-    환경 변수 HERMES_SESSION_ID는 쓰지 않는다. 게이트웨이가 프로세스 전체에 마지막 세션의 값을 덮어쓰므로
-    세션 밖에서 실행되는 래퍼는 엉뚱한 세션의 이름을 바꿀 수 있다.
-    """
-    db = pathlib.Path(home) / "state.db"
-    try:
-        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=5)
-        try:
-            row = conn.execute(
-                "select id from sessions where chat_id = ? order by started_at desc limit 1",
-                (f"webhook:{route}:{delivery_id}",),
-            ).fetchone()
-        finally:
-            conn.close()
-    except sqlite3.Error:
-        return None
-    return row[0] if row else None
-
-
-def wait_for_session(home, route, delivery_id, tries=20, delay=1.0, sleep=time.sleep):
-    """세션 행이 생길 때까지 기다린다. 래퍼는 세션보다 먼저 시작되므로 빨리 끝나는 요청에서는 아직 없을 수 있다."""
-    for attempt in range(tries):
-        session_id = find_session_id(home, route, delivery_id)
-        if session_id:
-            return session_id
-        if attempt + 1 < tries:
-            sleep(delay)
-    return None
-
-
-def rename_session(home, route, delivery_id, name, hermes_binary, run=subprocess.run, sleep=time.sleep):
-    """세션 이름을 바꾼다. 실패해도 분석 결과에는 영향이 없으며 이유만 돌려준다."""
-    session_id = wait_for_session(home, route, delivery_id, sleep=sleep)
-    if not session_id:
-        return "skipped:no_session"
-    binary = shutil.which(hermes_binary) or (hermes_binary if os.path.isabs(hermes_binary) and os.access(hermes_binary, os.X_OK) else None)
-    if not binary:
-        return "skipped:no_hermes_binary"
-    try:
-        result = run([binary, "sessions", "rename", session_id, name], capture_output=True, text=True, timeout=30)
-    except (OSError, subprocess.TimeoutExpired):
-        return "failed"
-    return "renamed" if result.returncode == 0 else "failed"
-
-
-def _guide(request, settings, app, home, hermes_run, sleep):
+def _guide(request, settings, app):
     """지원하지 않는 위치의 /qa 에는 분석하지 않고 안내만 단다. Claude도 기록도 쓰지 않는다."""
     kind = request["unsupported"]
     label = "이슈" if kind == "issue" else "PR"
     name = f"[{label}{request['pr']} - 안내]"
-    summary = {"result": "ok", "verdict": "-", "mode": "guide", "session": name, "report": "-", "comment": "skipped", "rename": "skipped"}
+    summary = {"result": "ok", "verdict": "-", "mode": "guide", "session": name, "report": "-", "comment": "skipped"}
     markdown = f"{UNSUPPORTED_GUIDANCE[kind]}\n\n---\n세션: `{name}`\n"
     if settings["post_comments"]:
         try:
@@ -160,7 +122,6 @@ def _guide(request, settings, app, home, hermes_run, sleep):
             log.exception("안내 코멘트 게시 실패 id=%r", request["deliveryId"])
             summary["comment"] = "failed"
             summary["error"] = _short_error(exc)
-    summary["rename"] = _rename(home, settings, request["deliveryId"], name, hermes_run, sleep)
     return summary
 
 
@@ -246,33 +207,31 @@ def _short_error(exc):
     return str(exc)[:200] if isinstance(exc, known) else f"unexpected:{type(exc).__name__}"
 
 
-def _rename(home, settings, delivery_id, name, hermes_run, sleep):
-    try:
-        return rename_session(home, settings["route_name"], delivery_id, name, settings["hermes_binary"], hermes_run, sleep)
-    except Exception:  # noqa: BLE001
-        log.exception("세션 이름 변경 중 오류 id=%r", delivery_id)
-        return "failed"
-
-
-def execute(delivery_id, home, settings, allowed_owners, claude, app, hermes_run=subprocess.run, sleep=time.sleep):
+def execute(request_path, context_path, home, settings, allowed_owners, claude, app):
     """분석 전체를 실행하고 요약 사전을 돌려준다. 오류는 요약의 result=failed 로 나타낸다.
+    /qa 명령이 아닌 요청은 result=ignored 이다.
 
     예상 밖 예외도 여기서 잡는다. 잡지 않으면 PR에 아무 흔적 없이 사라지고 기록은 pending으로 남는다.
     """
-    summary = {"result": "failed", "verdict": "-", "mode": "-", "session": "-", "report": "-", "comment": "skipped", "rename": "skipped"}
+    summary = {"result": "failed", "verdict": "-", "mode": "-", "session": "-", "report": "-", "comment": "skipped"}
     try:
         cleanup(home, settings["retention_days"])
     except Exception:  # noqa: BLE001 - 정리 실패가 분석을 막으면 안 된다
         log.exception("오래된 파일 정리 중 오류")
     try:
-        request = load_request(home, delivery_id, allowed_owners)
+        request = load_request(request_path, allowed_owners)
     except RunError as exc:
-        log.warning("요청을 처리하지 않음 id=%r: %s", delivery_id, exc)
+        log.warning("요청을 처리하지 않음: %s", exc)
         summary["error"] = str(exc)
         return summary
+    if request is None:
+        log.info("/qa 명령이 아니어서 할 일이 없음")
+        return dict(summary, result="ignored")
+    delivery_id = request["deliveryId"]
+    log.info("시작 id=%r", delivery_id)
 
     if request["unsupported"]:
-        return _guide(request, settings, app, home, hermes_run, sleep)
+        return _guide(request, settings, app)
 
     repo, pr, commit = request["repo"], request["pr"], request["commit"]
     # 같은 PR의 요청 순번. 기록을 쓸 수 없어도 분석은 계속한다.
@@ -297,8 +256,9 @@ def execute(delivery_id, home, settings, allowed_owners, claude, app, hermes_run
         except OSError:
             history = []
         kb = knowledge.DirectoryKnowledge(settings["knowledge_dirs"]) if settings["knowledge_dirs"] else knowledge.NullKnowledge()
-        # 요청 파일 옆에 다른 프로그램이 둔 해설 파일이 있으면 읽는다. 없으면 아무 일도 없다.
-        kb = knowledge.CompositeKnowledge([kb, contextfile.ContextFileKnowledge(data_dir(home) / "requests" / f"{delivery_id}.context.json")])
+        # 맥락 파일(context.v1)이 있으면 용어집으로 읽는다. 없으면 아무 일도 없다.
+        if context_path:
+            kb = knowledge.CompositeKnowledge([kb, contextfile.ContextFileKnowledge(context_path)])
         if request["free"] and not request["text"].strip():
             # 질문이 비어 있으면 Claude를 부르지 않고 안내만 한다.
             outcome = {"markdown": report.render_free(EMPTY_FREE_ANSWER, name), "verdict": "-", "mode": "free",
@@ -355,7 +315,6 @@ def execute(delivery_id, home, settings, allowed_owners, claude, app, hermes_run
 
     if settings["post_comments"]:
         _deliver(request, settings, app, markdown, comment_id, ack, summary)
-    summary["rename"] = _rename(home, settings, delivery_id, name, hermes_run, sleep)
     return summary
 
 
@@ -367,13 +326,14 @@ def _record(home, repo, pr, delivery_id, record, title):
         log.exception("PR 기록 저장 실패 id=%r", delivery_id)
 
 
-def format_summary(summary):
-    """세션 LLM에게 돌아가는 고정 형식의 한 줄. 사용자 입력에서 온 문자열은 넣지 않는다."""
-    order = ("result", "verdict", "mode", "session", "report", "comment", "rename")
-    parts = [f"{key}={summary[key]}" for key in order]
-    if "error" in summary:
-        parts.append("error=" + re.sub(r"[^A-Za-z0-9가-힣 _.:/()-]", "?", summary["error"])[:120])
-    return " ".join(parts)
+RESULT_STATUS = {"ok": "done", "failed": "failed", "ignored": "ignored"}
+
+
+def result_line(summary):
+    """controller가 읽는 결과 한 줄(result.v1). 세션 이름은 코드가 만든 값이다. 사용자 입력은 넣지 않는다."""
+    name = summary.get("session")
+    return json.dumps({"version": 1, "status": RESULT_STATUS.get(summary.get("result"), "failed"),
+                       "session_name": name if name and name != "-" else None}, ensure_ascii=False)
 
 
 SECRET_ENV = "TESTGATE_GITHUB_APP_SECRET"
@@ -382,7 +342,7 @@ SECRET_ENV = "TESTGATE_GITHUB_APP_SECRET"
 def load_app(settings, environ=None):
     """github-app 클라이언트. 서명 키는 환경 변수에서만 읽는다.
 
-    이 프로젝트는 비밀을 보관하거나 파일에서 읽지 않는다. 값은 Hermes 실행 환경이 넘긴다 (docs/setup.md 참고).
+    이 프로젝트는 비밀을 보관하거나 파일에서 읽지 않는다. 값은 실행 환경이 넘긴다(.env.example에 이름이 있다).
     """
     environ = os.environ if environ is None else environ
     secret = environ.get(SECRET_ENV, "")
@@ -392,14 +352,13 @@ def load_app(settings, environ=None):
 
 
 def _setup_logging():
-    """표준 오류로 시간표를 붙여 기록한다. 래퍼 스크립트(testgate-run)가 이것을 $HERMES_HOME/logs/testgate.log 로 보낸다."""
+    """표준 오류로 시간표를 붙여 기록한다. bin/testgate-run 이 이것을 로그 파일로 보낸다. 표준 출력은 결과 한 줄만 쓴다."""
     logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="%(asctime)s %(levelname)s %(message)s")
 
 
-def main(delivery_id):
+def main(request_path, context_path):
     _setup_logging()
-    log.info("시작 id=%r", delivery_id)
-    failed = {"result": "failed", "verdict": "-", "mode": "-", "session": "-", "report": "-", "comment": "skipped", "rename": "skipped"}
+    failed = {"result": "failed", "session": "-"}
     try:
         home = config.hermes_home()
         settings = config.load_analysis_config()
@@ -408,21 +367,18 @@ def main(delivery_id):
             app = load_app(settings)
         except githubapp.GithubAppError as exc:
             log.error("github-app 클라이언트를 만들 수 없음: %s", exc)
-            print(format_summary(dict(failed, error=str(exc))))
+            print(result_line(failed))
             return 1
         claude = runner.ClaudeRunner(
             binary=settings["claude_binary"], model=settings["claude_model"],
             timeout=settings["timeout_seconds"], effort=settings["claude_effort"],
         )
-        summary = execute(delivery_id, home, settings, allowed, claude, app)
-    except Exception as exc:  # noqa: BLE001 - 마지막 방어선. 호출한 쪽이 알 수 있게 로그와 요약을 남긴다
-        log.exception("래퍼가 예상 밖 오류로 중단됨 id=%r", delivery_id)
-        print(format_summary(dict(failed, error=_short_error(exc))))
+        summary = execute(request_path, context_path, home, settings, allowed, claude, app)
+    except Exception:  # noqa: BLE001 - 마지막 방어선. 호출한 쪽이 알 수 있게 로그와 결과를 남긴다
+        log.exception("예상 밖 오류로 중단됨")
+        print(result_line(failed))
         return 1
-    print(format_summary(summary))
-    log.info("끝 id=%r %s", delivery_id, format_summary(summary))
-    return 0 if summary["result"] == "ok" else 1
-
-
-if __name__ == "__main__":
-    sys.exit(main(sys.argv[1]) if len(sys.argv) > 1 else 2)
+    log.info("끝 result=%s verdict=%s mode=%s comment=%s report=%s", summary["result"], summary["verdict"], summary["mode"],
+             summary["comment"], summary["report"])
+    print(result_line(summary))
+    return 0 if summary["result"] in ("ok", "ignored") else 1

@@ -266,14 +266,14 @@ print(json.dumps({"is_error": False, "structured_output": json.loads(os.environ[
 
 
 class ExecuteTest(Base):
-    """실제 래퍼 실행(execute) 안에서 요청 파일 옆의 해설 파일을 읽는지."""
+    """실제 실행(execute) 안에서 넘겨받은 맥락 파일을 읽는지."""
 
     def setUp(self):
         super().setUp()
         claude = self.home / "claude"
         claude.write_text(RECORDING_CLAUDE)
         claude.chmod(claude.stat().st_mode | stat.S_IEXEC)
-        self.requests = self.home / "testgate" / "requests"
+        self.requests = self.home / "controller" / "requests"
 
     def put_context(self, data=None, raw=None, delivery_id="d-1"):
         self.requests.mkdir(parents=True, exist_ok=True)
@@ -336,3 +336,28 @@ class ExecuteTest(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ContractCopyTest(unittest.TestCase):
+    """contracts/context.v1.json(원본은 hermes-controller)의 사본을 이 코드가 그대로 읽는다."""
+
+    def test_contract_example_is_read(self):
+        path = pathlib.Path(__file__).resolve().parent.parent / "contracts" / "context.v1.json"
+        docs, notices = read_file(str(path))
+        self.assertEqual([d["id"] for d in docs], ["ced:balance"])
+        self.assertEqual(notices, [])
+
+
+class ExposureProbeTest(unittest.TestCase):
+    """scripts/exposure_check.py 의 판정 함수만 시험한다(실제 Claude는 부르지 않는다)."""
+
+    def test_leaks_are_found_and_clean_reports_pass(self):
+        import importlib.util
+        path = pathlib.Path(__file__).resolve().parent.parent / "scripts" / "exposure_check.py"
+        spec = importlib.util.spec_from_file_location("exposure_check", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        doc = {"id": "ced:balance", "title": "CED 해설: balance", "text": "개인 User 대상 계좌 잔액 기준 총 금액의 합산"}
+        self.assertEqual(mod.leaks("잔액 합계를 확인합니다.", [doc]), [])
+        self.assertTrue(mod.leaks("참고: 개인 User 대상 계좌 잔액 기준 총 금액의 합산", [doc]))
+        self.assertTrue(mod.leaks("ced:balance 참고", [doc]))

@@ -386,11 +386,6 @@ class AnalyzeCoverageTest(unittest.TestCase):
 
 
 class RulesDocAndConfigTest(unittest.TestCase):
-    def test_hermes_guide_lists_every_builtin_exclusion(self):
-        doc = (pathlib.Path(__file__).parent.parent / "docs" / "hermes-guide.md").read_text(encoding="utf-8").lower()
-        for item in sorted(budget.GENERATED_NAMES) + list(budget.GENERATED_SUFFIXES) + sorted(budget.GENERATED_DIRS):
-            self.assertIn(item.lower(), doc, f"docs/hermes-guide.md 에 제외 규칙 {item} 이 없다")
-
     def test_malformed_glob_settings_fall_back_to_defaults(self):
         import tempfile
         from testgate import config

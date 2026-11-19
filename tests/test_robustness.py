@@ -70,18 +70,6 @@ class UnexpectedErrorTest(Base):
             summary, _ = self.execute()
         self.assertEqual((summary["result"], summary["comment"], summary["error"]), ("ok", "failed", "unexpected:ValueError"))
 
-    def test_rename_exception_is_contained(self):
-        self.spool()
-        self.seed_session("d-1")
-        os.environ["FAKE_OUTPUT"] = json.dumps({"mode": "evaluate", "summary": "요약", "notes": "", "changes": [
-            {"path": "a.py", "change_summary": "c", "tested": "no", "evidence_quote": "", "request": "r", "scenarios": []}]})
-        def boom(*a, **k):
-            raise ValueError("hermes 호출 실패")
-        with self.assertLogs("testgate", "ERROR"):
-            summary = run.execute("d-1", self.home, self.settings, ["alice"], self.claude, self.app,
-                                  hermes_run=boom, sleep=lambda s: None)
-        self.assertEqual((summary["result"], summary["rename"]), ("ok", "failed"))
-
     def test_cleanup_failure_does_not_stop_the_analysis(self):
         self.spool()
         original = run.cleanup
@@ -102,7 +90,7 @@ class UnsupportedLocationTest(Base):
         return self.execute()
 
     def test_issue_comment_gets_guidance_only(self):
-        summary, renames = self.guide("issue")
+        summary, _ = self.guide("issue")
         self.assertEqual((summary["result"], summary["mode"], summary["session"]), ("ok", "guide", "[이슈3 - 안내]"))
         paths = [path for path, _ in FakeApp.log]
         self.assertEqual(paths, ["/api/comment"], "PR 조회 없이 코멘트만 게시한다")
@@ -110,7 +98,6 @@ class UnsupportedLocationTest(Base):
         self.assertIn("이슈 코멘트의 `/qa`는 지원하지 않습니다", body)
         self.assertTrue(body.rstrip().endswith("세션: `[이슈3 - 안내]`"))
         self.assertEqual(FakeApp.log[0][1]["deliveryId"], "d-1")
-        self.assertEqual(renames[0][-1], "[이슈3 - 안내]")
         self.assertEqual(self.claude.calls, 0)
 
     def test_review_comment_gets_guidance_with_pr_name(self):
@@ -136,10 +123,10 @@ class UnsupportedLocationTest(Base):
         self.assertEqual((summary["result"], summary["comment"]), ("ok", "failed"))
 
     def test_invalid_unsupported_value_is_rejected(self):
-        for bad in ("commit", "pull_request", "x", 1, True):
-            self.spool("d-bad", unsupported=bad)
+        for bad in ("commit", "x", 1, True):
+            self.spool("d-bad", target=bad)
             with self.assertRaises(run.RunError, msg=repr(bad)):
-                run.load_request(self.home, "d-bad", ["alice"])
+                run.load_request(self.request_path("d-bad"), ["alice"])
 
     def test_guidance_still_checks_the_owner(self):
         self.spool("d-1", unsupported="issue", repo="mallory/r")
@@ -169,10 +156,10 @@ class MainSafetyNetTest(unittest.TestCase):
             else:
                 os.environ[key] = value
 
-    def call_main(self, delivery_id="d-1"):
+    def call_main(self):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            code = run.main(delivery_id)
+            code = run.main(str(pathlib.Path(self.tmp.name) / "none.json"), None)
         return code, out.getvalue()
 
     def test_uncaught_failure_returns_1_with_a_summary_and_a_log(self):
@@ -182,8 +169,7 @@ class MainSafetyNetTest(unittest.TestCase):
         with self.assertLogs("testgate", "ERROR") as logs:
             code, out = self.call_main()
         self.assertEqual(code, 1)
-        self.assertTrue(out.startswith("result=failed"))
-        self.assertIn("unexpected:KeyError", out)
+        self.assertEqual(json.loads(out.strip().splitlines()[-1]), {"version": 1, "status": "failed", "session_name": None})
         self.assertTrue(any("예상 밖 오류로 중단" in line for line in logs.output))
 
     def test_missing_secret_is_reported_and_logged(self):
@@ -191,12 +177,12 @@ class MainSafetyNetTest(unittest.TestCase):
         with self.assertLogs("testgate", "ERROR") as logs:
             code, out = self.call_main()
         self.assertEqual(code, 1)
-        self.assertIn("TESTGATE_GITHUB_APP_SECRET", out)
+        self.assertNotIn("TESTGATE_GITHUB_APP_SECRET", out, "결과 줄에는 약속된 값만 나간다")
         self.assertTrue(any("TESTGATE_GITHUB_APP_SECRET" in line for line in logs.output))
 
 
 class LauncherLogTest(unittest.TestCase):
-    """설치된 testgate-run 이 출력과 오류를 로그 파일로 보내는지 시험한다."""
+    """bin/testgate-run 이 결과 한 줄만 표준 출력에 내고, 기록은 로그 파일로 보내는지 시험한다."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -204,29 +190,23 @@ class LauncherLogTest(unittest.TestCase):
         self.home = pathlib.Path(self.tmp.name)
         self.env = {k: v for k, v in os.environ.items() if not k.startswith("TESTGATE_")}
         self.env["HERMES_HOME"] = str(self.home)
-        subprocess.run([str(ROOT / "scripts" / "install.sh")], env=self.env, check=True, capture_output=True)
-        self.launcher = self.home / "testgate" / "testgate-run"
+        self.env["TESTGATE_CONFIG"] = str(self.home / "none.json")
+        self.launcher = ROOT / "bin" / "testgate-run"
 
-    def launch(self, delivery_id="some-id"):
-        # 운영에서는 필터가 래퍼 폴더에서 띄운다. 저장소 루트에서 실행하면 설치본이 아니라 저장소의 코드가 불려 온다.
-        return subprocess.run([str(self.launcher), delivery_id], env=self.env, cwd=str(self.launcher.parent),
-                              capture_output=True, text=True, timeout=30)
+    def launch(self):
+        return subprocess.run([str(self.launcher), "--request", str(self.home / "r.json"), "--context", ""],
+                              env=self.env, cwd=str(self.home), capture_output=True, text=True, timeout=30)
 
-    def test_output_and_errors_go_to_the_log_not_the_terminal(self):
+    def test_stdout_is_only_the_result_and_logs_go_to_the_file(self):
         proc = self.launch()
-        self.assertEqual((proc.stdout, proc.stderr), ("", ""), "필터가 DEVNULL 로 띄워도 흔적이 로그에 남아야 한다")
+        self.assertEqual(proc.returncode, 1, "비밀이 없어서 1로 끝나야 한다")
+        self.assertEqual(json.loads(proc.stdout), {"version": 1, "status": "failed", "session_name": None})
+        self.assertEqual(proc.stderr, "")
         log = (self.home / "logs" / "testgate.log").read_text(encoding="utf-8")
-        self.assertIn("시작 id='some-id'", log)
         self.assertIn("TESTGATE_GITHUB_APP_SECRET", log)
         self.assertRegex(log, r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}")
         import stat
         self.assertEqual(stat.S_IMODE((self.home / "logs" / "testgate.log").stat().st_mode), 0o600)
-
-    def test_import_errors_are_logged_too(self):
-        (self.home / "testgate" / "lib" / "testgate" / "run.py").write_text("raise ImportError('깨진 설치')\n")
-        self.launch()
-        log = (self.home / "logs" / "testgate.log").read_text(encoding="utf-8")
-        self.assertIn("깨진 설치", log)
 
     def test_large_log_is_rotated_once(self):
         logs = self.home / "logs"
@@ -236,36 +216,11 @@ class LauncherLogTest(unittest.TestCase):
         self.assertTrue((logs / "testgate.log.1").exists())
         self.assertLess((logs / "testgate.log").stat().st_size, 5000)
 
-    def test_unwritable_log_location_does_not_stop_the_wrapper(self):
+    def test_unwritable_log_location_does_not_stop_the_command(self):
         (self.home / "logs").write_text("폴더가 아니라 파일")
         proc = self.launch()
-        self.assertEqual(proc.returncode, 1, "비밀이 없어서 1로 끝나야 한다 (로그 때문에 죽지 않음)")
-
-    def test_hermes_guide_is_installed_with_a_hidden_source_mark(self):
-        readme = self.home / "testgate" / "README.md"
-        text = readme.read_text(encoding="utf-8")
-        self.assertTrue(text.startswith("# TestGate 안내"))
-        self.assertTrue(text.rstrip().endswith("-->"))
-        self.assertIn("[hermes-test-gate] 현재 Repo(hermes-test-gate)로 생성한 파일입니다", text.rstrip().splitlines()[-1])
-        # 원본과 같은 내용에 표시만 덧붙은 것이어야 한다
-        source = (ROOT / "docs" / "hermes-guide.md").read_text(encoding="utf-8")
-        self.assertTrue(text.startswith(source.rstrip("\n")))
-
-    def test_edited_guide_is_detected_by_check(self):
-        (self.home / "testgate" / "README.md").write_text("손으로 고침\n")
-        proc = subprocess.run([str(ROOT / "scripts" / "install.sh"), "--check"], env=self.env, capture_output=True, text=True)
         self.assertEqual(proc.returncode, 1)
-        self.assertIn("README.md", proc.stderr)
-
-    def test_guide_states_the_facts_hermes_got_wrong(self):
-        text = (ROOT / "docs" / "hermes-guide.md").read_text(encoding="utf-8")
-        for fact in ("분석에 관여하지 않음", "Claude 구독으로 실행됩니다", "TestGate의 설정입니다",
-                     "testgate.log", "TESTGATE_GITHUB_APP_SECRET", "읽거나 출력하거나 대화에 적지 마세요"):
-            self.assertIn(fact, text)
-
-    def test_installed_launcher_is_checked(self):
-        proc = subprocess.run([str(ROOT / "scripts" / "install.sh"), "--check"], env=self.env, capture_output=True, text=True)
-        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(json.loads(proc.stdout)["status"], "failed")
 
 
 if __name__ == "__main__":

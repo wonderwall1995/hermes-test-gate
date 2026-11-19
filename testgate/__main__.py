@@ -11,8 +11,9 @@ from testgate import budget, config, diffsource, knowledge, prompt, runner, sche
 def build_parser():
     parser = argparse.ArgumentParser(prog="testgate")
     sub = parser.add_subparsers(dest="command", required=True)
-    r = sub.add_parser("run", help="Hermes 세션이 실행하는 래퍼. delivery ID 하나를 받는다")
-    r.add_argument("delivery_id")
+    r = sub.add_parser("run", help="요청 파일 하나를 분석하고 PR에 게시한다 (controller가 실행)")
+    r.add_argument("--request", required=True, help="요청 파일 (contracts/request.v1.json 모양)")
+    r.add_argument("--context", default="", help="맥락 파일 (contracts/context.v1.json 모양, 없어도 된다)")
     a = sub.add_parser("analyze", help="QA 서술을 평가하거나 테스트 설계서를 만든다")
     a.add_argument("--repo", required=True, help="로컬 git 저장소 경로 (diff 소스)")
     a.add_argument("--base", required=True, help="기준 브랜치 또는 참조")
@@ -45,7 +46,7 @@ def main(argv=None):
     args = build_parser().parse_args(argv)
     if args.command == "run":
         from testgate import run as run_mod
-        return run_mod.main(args.delivery_id)
+        return run_mod.main(args.request, args.context or None)
     settings = config.load_analysis_config(args.config)
     commit = args.commit.lower() if args.commit else None
     request = {"deliveryId": "local", "repo": args.repo_name, "pr": args.pr, "commit": commit, "text": read_text(args)}
