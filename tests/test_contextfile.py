@@ -140,7 +140,7 @@ class KnowledgeTest(FileCase):
         self.write({"version": 1, "docs": [DOC], "notices": ["안내 하나"]})
         kb = self.kb()
         self.assertEqual(kb.load(CONTEXT), [DOC])
-        self.assertEqual(kb.drain_notes(), ["참고 문서 1건이 첨부됨: CED 해설: amount", "안내 하나"])
+        self.assertEqual(kb.drain_notes(), ["참고 문서 1건을 용어 해석에 사용함."])
 
     def test_notes_are_drained_once(self):
         self.write({"version": 1, "docs": [DOC]})
@@ -149,19 +149,22 @@ class KnowledgeTest(FileCase):
         self.assertTrue(kb.drain_notes())
         self.assertEqual(kb.drain_notes(), [])
 
-    def test_only_five_titles_are_named(self):
+    def test_note_has_count_only_no_titles(self):
         docs = [dict(DOC, id=f"d{i}", title=f"제목{i}") for i in range(8)]
         self.write({"version": 1, "docs": docs})
         kb = self.kb()
         kb.load(CONTEXT)
         (note,) = kb.drain_notes()
-        self.assertEqual(note, "참고 문서 8건이 첨부됨: 제목0, 제목1, 제목2, 제목3, 제목4 외 3건")
+        self.assertEqual(note, "참고 문서 8건을 용어 해석에 사용함.")
+        self.assertNotIn("제목", note)
 
-    def test_a_notice_only_file_adds_a_note_and_no_documents(self):
-        self.write({"version": 1, "docs": [], "notices": ["참고 문서 공급자가 응답하지 않아 해설 없이 분석함 (timeout)."]})
+    def test_notices_go_to_log_not_report(self):
+        self.write({"version": 1, "docs": [], "notices": ["컬럼 balance가 두 제품에 있음"]})
         kb = self.kb()
-        self.assertEqual(kb.load(CONTEXT), [])
-        self.assertEqual(kb.drain_notes(), ["참고 문서 공급자가 응답하지 않아 해설 없이 분석함 (timeout)."])
+        with self.assertLogs("testgate", level="INFO") as logs:
+            self.assertEqual(kb.load(CONTEXT), [])
+        self.assertEqual(kb.drain_notes(), [])
+        self.assertIn("balance", "".join(logs.output))
 
     def test_size_limits_cut_documents_and_say_so(self):
         self.write({"version": 1, "docs": [dict(DOC, id="a", text="가" * 100), dict(DOC, id="b", text="나" * 100)]})
@@ -176,13 +179,12 @@ class KnowledgeTest(FileCase):
         self.assertEqual(kb.load(CONTEXT), [])
         self.assertEqual(kb.drain_notes(), ["참고 문서 파일을 읽지 못해 해설 없이 분석함 (bad_output)."])
 
-    def test_titles_are_cleaned_for_the_report(self):
+    def test_titles_never_reach_the_report(self):
         self.write({"version": 1, "docs": [dict(DOC, title="링크http://evil.test  제목\n끝")]})
         kb = self.kb()
         kb.load(CONTEXT)
         (note,) = kb.drain_notes()
-        self.assertNotIn("://", note)
-        self.assertNotIn("\n", note)
+        self.assertNotIn("evil", note)
 
     def test_the_text_of_a_document_is_passed_through_unchanged(self):
         self.write({"version": 1, "docs": [dict(DOC, text="# 제목\n\n> 인용\n본문")]})
@@ -219,9 +221,10 @@ class AnalyzeTest(FakeClaudeCase, FileCase):
         prompt_text = json.loads(self.record.read_text())["stdin"]
         self.assertIn("reference:ced:amount", prompt_text)
         self.assertIn("금액의 뜻", prompt_text)
-        self.assertIn("참고 문서 1건이 첨부됨: CED 해설: amount", outcome["notes"])
+        self.assertIn("참고 문서 1건을 용어 해석에 사용함.", outcome["notes"])
         self.assertIn("## 비고", outcome["markdown"])
-        self.assertIn("참고 문서 1건이 첨부됨", outcome["markdown"])
+        self.assertIn("참고 문서 1건을 용어 해석에 사용함.", outcome["markdown"])
+        self.assertNotIn("amount", outcome["markdown"][outcome["markdown"].index("## 비고"):])
 
     def test_without_a_file_the_analysis_is_exactly_as_before(self):
         outcome = analyze.analyze(REQUEST, CONTEXT, self.kb(), self.runner())
@@ -242,7 +245,7 @@ class AnalyzeTest(FakeClaudeCase, FileCase):
         section = markdown[markdown.index("## 비고"):]
         self.assertNotIn("@everyone", section)
         self.assertNotIn("@admin", section)
-        self.assertIn("@​everyone", section)
+        self.assertNotIn("everyone", section)
         self.assertNotIn("<img", section)
         self.assertNotIn("](", section)
         self.assertNotIn("://", section)
@@ -252,7 +255,7 @@ class AnalyzeTest(FakeClaudeCase, FileCase):
         os.environ["FAKE_OUTPUT"] = json.dumps({"answer": "답변", "notes": ""})
         outcome = analyze.analyze_free(REQUEST, CONTEXT, self.kb(), self.runner())
         self.assertIn("reference:ced:amount", json.loads(self.record.read_text())["stdin"])
-        self.assertTrue(any("참고 문서 1건이 첨부됨" in n for n in outcome["notes"]))
+        self.assertTrue(any("참고 문서 1건을 용어 해석에 사용함." in n for n in outcome["notes"]))
 
 
 RECORDING_CLAUDE = """#!/usr/bin/env python3
@@ -290,8 +293,9 @@ class ExecuteTest(Base):
         self.assertIn("reference:ced:amount", self.prompt())
         self.assertIn("금액의 뜻", self.prompt())
         body = self.posted()
-        self.assertIn("참고 문서 1건이 첨부됨: CED 해설: amount", body)
-        self.assertIn("안내 하나", body)
+        self.assertIn("참고 문서 1건을 용어 해석에 사용함.", body)
+        self.assertNotIn("CED 해설", body)
+        self.assertNotIn("안내 하나", body)
 
     def test_without_a_context_file_nothing_changes(self):
         self.spool()

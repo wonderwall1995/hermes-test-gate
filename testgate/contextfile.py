@@ -8,7 +8,7 @@
 - 파일이 없으면 아무 일도 하지 않는다. 이 기능이 없을 때와 똑같이 동작한다.
 - 파일이 깨졌거나 읽을 수 없으면 해설 없이 분석을 이어가고, 사유 코드를 보고서 비고에 남긴다.
 - 문서는 신뢰하지 않는 데이터이다. 길이와 개수를 제한하고, 프롬프트에는 데이터 블록으로만 들어간다.
-- 보고서에는 제목과 안내만 나온다. 보고서의 이스케이프(멘션, HTML, 이미지·링크 문법)를 거치고, 맨 URL은 자동 링크가 되지 않게 깨뜨린다.
+- 보고서(GitHub 코멘트)에는 문서 개수만 나온다. 제목, 내용, 파일의 안내(notices)는 나오지 않는다. 안내는 로컬 로그에만 남긴다.
 - 사유 코드만 보고서에 쓴다. 파일 안의 오류 문장이나 경로는 쓰지 않는다.
 """
 
@@ -27,8 +27,6 @@ MAX_FILE_BYTES = 2 * 1024 * 1024
 MAX_DOCS = 50
 MAX_NOTICES = 5
 MAX_NOTICE_CHARS = 300
-TITLE_LIMIT = 80
-SHOWN_TITLES = 5
 
 # 실패 사유 코드
 UNREADABLE = "unreadable"
@@ -125,12 +123,11 @@ class ContextFileKnowledge:
             total += len(text)
             docs.append({"id": item["id"], "title": item["title"], "text": text})
         if docs:
-            titles = [plain(d["title"], TITLE_LIMIT) or d["id"] for d in docs[:SHOWN_TITLES]]
-            more = f" 외 {len(docs) - SHOWN_TITLES}건" if len(docs) > SHOWN_TITLES else ""
-            self._notes.append(f"참고 문서 {len(docs)}건이 첨부됨: {', '.join(titles)}{more}")
+            self._notes.append(f"참고 문서 {len(docs)}건을 용어 해석에 사용함.")
         if omitted:
             self._notes.append(f"참고 문서 {omitted}건은 크기 한도로 뺐습니다.")
-        self._notes.extend(notices)
+        for notice in notices:
+            log.info("해설 파일 안내: %s", notice)
         return docs
 
     def drain_notes(self):
